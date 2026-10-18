@@ -113,7 +113,7 @@ CXXFLAGS := -O2 -g -std=c++17 -I$(IMGUI) -I$(IMGUI)/backends -Iruntime -Iruntime
 
 all: $(EXE) $(if $(GEN_SRC),$(GAMELIB))
 
-$(B)/obj/%.o: $(GEN)/%.c runtime/cpu.h
+$(B)/obj/%.o: $(GEN)/%.c runtime/cpu.h runtime/simd.h runtime/simd_fp.h
 	@mkdir -p $(dir $@)
 	@$(CC) $(GENFLAGS) -c $< -o $@
 
@@ -184,9 +184,9 @@ gen-objs: $(GEN_OBJ)
 # Runtime objects only (no generated code, no link): quick compile check
 runtime-objs: $(RT_OBJ) $(BACKEND_OBJ) $(UI_OBJ)
 
-$(B)/rt/platform/windows_rc.o: runtime/platform/windows.rc docs/icon/icon.ico
+$(B)/rt/platform/windows_rc.o: runtime/platform/windows.rc docs/icon/icon.ico runtime/platform/windows.manifest
 	@mkdir -p $(dir $@)
-	$(WINDRES) -I docs/icon -O coff $< -o $@
+	$(WINDRES) -I docs/icon -I runtime/platform -O coff $< -o $@
 
 # Windows release: build/dist/LetsGoRecomp-<version>-windows.zip, top folder "LetsGoRecomp/": LetsGoRecomp.exe, the
 # DLLs it loads (runs without MSYS2) and what its start screen builds the game code with on the player's machine

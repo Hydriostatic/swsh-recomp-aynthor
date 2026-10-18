@@ -1,5 +1,8 @@
 // The .exe's icon (Makefile: windres -I docs/icon). ID 1: Explorer and the taskbar use the first icon resource.
 1 ICON "icon.ico"
+// The application manifest (RT_MANIFEST 24, ID 1): UTF-8 as the process code page. Paths are UTF-8 in the runtime, but
+// fopen / stat / opendir read them in the system code page, so a folder named with accents or other non-ASCII characters was not found
+1 24 "windows.manifest"
 
 // Name shown by Task Manager and the file's properties (the window title is RT_APP_NAME, runtime/paths.h)
 1 VERSIONINFO

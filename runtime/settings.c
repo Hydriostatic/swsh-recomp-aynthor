@@ -33,6 +33,41 @@ Settings g_settings = {
 
 // Unknown keys (an older larecomp.ini: Link's Awakening's options from LAS Recomp) are ignored, and dropped at the
 // next save.
+static void parse_line(const char *line) {
+    char key[64];
+    char val[128];
+    if (sscanf(line, " %63[^= ] = %127[^\n]", key, val) < 1) return;
+    if (!strcmp(key, "game_lang") || !strcmp(key, "mod")) {  // (may be empty)
+        if (sscanf(line, " %63[^= ] = %127[^\n]", key, val) != 2) val[0] = 0;
+        if (key[0] == 'g') strlcpy(g_settings.game_lang, val, sizeof g_settings.game_lang);
+        else strlcpy(g_settings.mod, val, sizeof g_settings.mod);
+        return;
+    }
+    if (!strcmp(key, "fullscreen")) g_settings.fullscreen = atoi(val) != 0;
+    else if (!strcmp(key, "fps")) g_settings.fps = atoi(val) == 60 ? 60 : 30;
+    else if (!strcmp(key, "render_height")) g_settings.res_height = atoi(val) >= 360 && atoi(val) <= 4320 ? atoi(val) : 0;
+    else if (!strcmp(key, "volume")) g_settings.volume = (float)atof(val);
+    else if (!strcmp(key, "mouse_sens")) g_settings.mouse_sens = (float)atof(val);
+    else if (!strcmp(key, "stick_deadzone")) g_settings.stick_deadzone = (float)atof(val);
+    else if (!strcmp(key, "reverb")) g_settings.reverb = atoi(val) != 0;
+    else if (!strcmp(key, "movie_audio")) g_settings.movie_audio = atoi(val) != 0;
+    else if (!strcmp(key, "show_fps")) g_settings.show_fps = atoi(val) != 0;
+    else if (!strcmp(key, "resolution")) {
+        int n = atoi(val);
+        g_settings.res_mode = !strcmp(val, "dynamic") ? RES_DYNAMIC : (!strcmp(val, "75%") || !strcmp(val, "67%")) ? RES_Q75 :
+                              !strcmp(val, "50%") ? RES_Q50 : !strcmp(val, "25%") ? RES_Q25 :
+                              (n >= 1 && n <= 4) ? n : n > 4 ? 4 : RES_MATCH;
+    }
+    else if (!strcmp(key, "upscaler")) g_settings.upscaler = !strcmp(val, "bilinear") ? UPSCALE_BILINEAR : UPSCALE_SHARP;
+    // (an older "antialias = off" was only LAS Recomp's default being saved: a new key, so SMAA starts on)
+    else if (!strcmp(key, "smaa")) g_settings.antialias = atoi(val) != 0 ? AA_SMAA : AA_OFF;
+    else if (!strcmp(key, "render_thread")) g_settings.render_thread = atoi(val) != 0;
+    else if (!strcmp(key, "vertex_read")) g_settings.vertex_read = !strcmp(val, "direct") ? VREAD_DIRECT : !strcmp(val, "copy") ? VREAD_COPY : VREAD_AUTO;
+    else if (!strcmp(key, "dpad_move")) g_settings.dpad_move = atoi(val) != 0;
+    else if (!strcmp(key, "wild_battle")) g_settings.wild_battle = atoi(val) != 0;
+    else bind_settings_load(key, val);  // bind_pad_* / bind_key_*: runtime/hle/bindings.c
+}
+
 void settings_load(void) {
     static bool loaded;
     if (loaded) return;
@@ -43,38 +78,18 @@ void settings_load(void) {
     while (fgets(line, sizeof line, f)) {
         // (a file edited by hand may have CRLF: "resolution = dynamic\r" did not match and fell back silently)
         for (size_t n = strlen(line); n && (line[n - 1] == '\n' || line[n - 1] == '\r' || line[n - 1] == ' '); n--) line[n - 1] = 0;
-        char key[64];
-        char val[128];
-        if (sscanf(line, " %63[^= ] = %127[^\n]", key, val) < 1) continue;
-        if (!strcmp(key, "game_lang") || !strcmp(key, "mod")) {  // (may be empty)
-            if (sscanf(line, " %63[^= ] = %127[^\n]", key, val) != 2) val[0] = 0;
-            if (key[0] == 'g') strlcpy(g_settings.game_lang, val, sizeof g_settings.game_lang);
-            else strlcpy(g_settings.mod, val, sizeof g_settings.mod);
-            continue;
+        // (0.3.1 saved some settings without their line break - "fullscreen = 0fps = 60render_height = 1440": a key
+        // glued to the previous value is split off again, so a file written then keeps its settings)
+        const char *p = line;
+        for (;;) {
+            const char *eq = strstr(p, " = "), *next = eq ? strstr(eq + 3, " = ") : NULL, *k = next;
+            while (k && k > eq + 3 && ((k[-1] >= 'a' && k[-1] <= 'z') || k[-1] == '_')) k--;
+            if (!next || k == next || k <= eq + 3) { parse_line(p); break; }
+            char part[256];
+            snprintf(part, sizeof part, "%.*s", (int)(k - p), p);
+            parse_line(part);
+            p = k;
         }
-        if (!strcmp(key, "fullscreen")) g_settings.fullscreen = atoi(val) != 0;
-        else if (!strcmp(key, "fps")) g_settings.fps = atoi(val) == 60 ? 60 : 30;
-        else if (!strcmp(key, "render_height")) g_settings.res_height = atoi(val) >= 360 && atoi(val) <= 4320 ? atoi(val) : 0;
-        else if (!strcmp(key, "volume")) g_settings.volume = (float)atof(val);
-        else if (!strcmp(key, "mouse_sens")) g_settings.mouse_sens = (float)atof(val);
-        else if (!strcmp(key, "stick_deadzone")) g_settings.stick_deadzone = (float)atof(val);
-        else if (!strcmp(key, "reverb")) g_settings.reverb = atoi(val) != 0;
-        else if (!strcmp(key, "movie_audio")) g_settings.movie_audio = atoi(val) != 0;
-        else if (!strcmp(key, "show_fps")) g_settings.show_fps = atoi(val) != 0;
-        else if (!strcmp(key, "resolution")) {
-            int n = atoi(val);
-            g_settings.res_mode = !strcmp(val, "dynamic") ? RES_DYNAMIC : (!strcmp(val, "75%") || !strcmp(val, "67%")) ? RES_Q75 :
-                                  !strcmp(val, "50%") ? RES_Q50 : !strcmp(val, "25%") ? RES_Q25 :
-                                  (n >= 1 && n <= 4) ? n : n > 4 ? 4 : RES_MATCH;
-        }
-        else if (!strcmp(key, "upscaler")) g_settings.upscaler = !strcmp(val, "bilinear") ? UPSCALE_BILINEAR : UPSCALE_SHARP;
-        // (an older "antialias = off" was only LAS Recomp's default being saved: a new key, so SMAA starts on)
-        else if (!strcmp(key, "smaa")) g_settings.antialias = atoi(val) != 0 ? AA_SMAA : AA_OFF;
-        else if (!strcmp(key, "render_thread")) g_settings.render_thread = atoi(val) != 0;
-        else if (!strcmp(key, "vertex_read")) g_settings.vertex_read = !strcmp(val, "direct") ? VREAD_DIRECT : !strcmp(val, "copy") ? VREAD_COPY : VREAD_AUTO;
-        else if (!strcmp(key, "dpad_move")) g_settings.dpad_move = atoi(val) != 0;
-        else if (!strcmp(key, "wild_battle")) g_settings.wild_battle = atoi(val) != 0;
-        else bind_settings_load(key, val);  // bind_pad_* / bind_key_*: runtime/hle/bindings.c
     }
     fclose(f);
     if (g_settings.volume < 0) g_settings.volume = 0;

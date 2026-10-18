@@ -102,8 +102,10 @@ static Sub *sub(void) {
         }
         for (int i = 0; i < s->npools; i++) vkResetDescriptorPool(g_vk.dev, s->pools[i], 0);
         s->cur_pool = 0;
-        s->seq = submit_seq + 1;
+        pthread_mutex_lock(&seq_lock);
         s->main_begun = s->upload_begun = false;
+        s->seq = submit_seq + 1;
+        pthread_mutex_unlock(&seq_lock);
     }
     return s;
 }
@@ -117,7 +119,9 @@ static void begin_cb(VkCommandBuffer *cb, bool *begun) {
     }
     VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     VK_CHECK(vkBeginCommandBuffer(*cb, &bi));
+    pthread_mutex_lock(&seq_lock);
     *begun = true;
+    pthread_mutex_unlock(&seq_lock);
 }
 
 static void gp_mark(VkCommandBuffer cb, const char *fmt, ...);
@@ -282,8 +286,8 @@ void vk_submit_extra(VkSemaphore wait, VkSemaphore signal, VkCommandBuffer extra
     }
     pthread_mutex_lock(&seq_lock);
     submit_seq++;
-    pthread_mutex_unlock(&seq_lock);
     cur_sub = (cur_sub + 1) % SUBS;
+    pthread_mutex_unlock(&seq_lock);
     stat_flushes++;
     cum_submits++;
     ring_retire();
@@ -306,7 +310,11 @@ void renderer_sync(void) {
 
 uint64_t renderer_fence_seq(void) {
     pthread_mutex_lock(&seq_lock);
-    uint64_t q = submit_seq + (subs[cur_sub].main_begun || subs[cur_sub].upload_begun ? 1 : 0);
+    Sub *s = &subs[cur_sub];
+    // A reused slot keeps its old begun flags until sub() prepares it: an empty queue's fence must name the last
+    // submission, not a future one that submit's empty-work fast path never signals (LAS Recomp 37b7ff6).
+    bool pending = s->seq == submit_seq + 1 && (s->main_begun || s->upload_begun);
+    uint64_t q = submit_seq + (pending ? 1 : 0);
     pthread_mutex_unlock(&seq_lock);
     return q;
 }
@@ -917,6 +925,16 @@ static void begin_pass(void) {
         if (eh < minh) minh = eh;
         pass_samples = b->samples;
     }
+    // Bound color slots without a texture / view went in as VK_NULL_HANDLE attachments (legal), but Intel's Windows
+    // driver for UHD 630 crashes in vkCmdBeginRendering on them (LAS Recomp f4cb039, its issues #8 / #46). Empty slots
+    // at the end are left out (pipelines and clears follow pass_ncolor); one in the middle is logged once.
+    while (pass_ncolor && !ca[pass_ncolor - 1].imageView) pass_ncolor--;
+    static bool logged_hole;
+    for (uint32_t i = 0; i < pass_ncolor && !logged_hole; i++)
+        if (!ca[i].imageView) {
+            logged_hole = true;
+            LOG("[vk] pass with an empty color slot %u of %u (texture %s)\n", i, pass_ncolor, st.rt.color[i] ? "without a view" : "none");
+        }
     pass_depth = pass_stencil = VK_FORMAT_UNDEFINED;
     bool has_d = false, has_s = false;
     if (st.rt.depth) {
@@ -2436,7 +2454,9 @@ static void draw_(CmdRec *r, bool indexed) {
     memset(&k, 0, sizeof k);
     k.prog = pr;
     k.ncolor = pass_ncolor;
-    memcpy(k.color, pass_color, sizeof k.color);
+    // (only the pass's own slots: the ones past them keep what the last pass with more targets set, so a depth-only
+    // pass's pipelines got several keys and were built again for each - LAS Recomp 3921201)
+    for (uint32_t i = 0; i < pass_ncolor && i < 8; i++) k.color[i] = pass_color[i];
     k.depth = pass_depth;
     k.stencil = pass_stencil;
     k.samples = pass_samples;

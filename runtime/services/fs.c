@@ -408,6 +408,17 @@ typedef struct { char root[1024]; } HostFs;
 typedef struct { int fd; char path[1100]; } HostFile;
 typedef struct { DIR *d; char path[1024]; int mode; } HostDir;
 
+// The game closed the file / directory: close the host one too (LAS Recomp 1c805c2). They stayed open for the whole
+// run: one leaked descriptor per open, and on Windows an open file can't be replaced or deleted.
+static void file_close(Service *s) {
+    HostFile *f = s->state;
+    if (f) { close(f->fd); free(f); s->state = NULL; }
+}
+static void dir_close(Service *s) {
+    HostDir *d = s->state;
+    if (d) { if (d->d) closedir(d->d); free(d); s->state = NULL; }
+}
+
 static const char *in_path(IpcReq *req, int i) {
     if (i < req->nx) return (const char *)(uintptr_t)req->x[i].addr;
     if (i < req->na) return (const char *)(uintptr_t)req->a[i].addr;
@@ -559,7 +570,9 @@ static void filesystem(Service *s, IpcReq *req, IpcResp *resp) {
         HostFile *f = calloc(1, sizeof *f);
         f->fd = fd;
         strlcpy(f->path, p, sizeof f->path);
-        ipc_return_object(resp, service_new("IFile", file, f));
+        Service *fsvc = service_new("IFile", file, f);
+        fsvc->on_close = file_close;
+        ipc_return_object(resp, fsvc);
         break;
     }
     case 9: {  // OpenDirectory(mode)
@@ -569,7 +582,9 @@ static void filesystem(Service *s, IpcReq *req, IpcResp *resp) {
         hd->d = d;
         hd->mode = (int)IN(uint32_t, 0);
         snprintf(hd->path, sizeof hd->path, "%s", p);
-        ipc_return_object(resp, service_new("IDirectory", directory, hd));
+        Service *dsvc = service_new("IDirectory", directory, hd);
+        dsvc->on_close = dir_close;
+        ipc_return_object(resp, dsvc);
         break;
     }
     case 10: break;  // Commit

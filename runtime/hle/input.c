@@ -152,6 +152,17 @@ static bool test_event(const SDL_Event *e) {
     }
 }
 
+// A controller SDL has no mapping for is only a joystick to it, and the game reads gamepads only. gamecontrollerdb.txt
+// in the data root holds the player's own mappings, in SDL's format (lines for other platforms are skipped, so
+// SDL_GameControllerDB's file works as is; LAS Recomp 8f28a0e). Called right after SDL_Init: a pad already connected
+// becomes a gamepad then (SDL sends GAMEPAD_ADDED).
+void input_load_user_mappings(void) {
+    if (!SDL_GetPathInfo("gamecontrollerdb.txt", NULL)) return;
+    int n = SDL_AddGamepadMappingsFromFile("gamecontrollerdb.txt");
+    if (n < 0) LOG("[input] gamecontrollerdb.txt: %s\n", SDL_GetError());
+    else LOG("[input] gamecontrollerdb.txt: %d controller mapping(s) added\n", n);
+}
+
 // Scripted test runs ignore the user's own input (a key or stick touched while a test drives Link spoils it):
 // LARECOMP_NO_USER_INPUT=1, on by default whenever LARECOMP_INPUT / LARECOMP_DOORJUMP_TEST / LARECOMP_PLACE is set
 // (or LARECOMP_HOST_INPUT / LARECOMP_BIND_TEST; LARECOMP_NO_USER_INPUT=0 lets it through again).

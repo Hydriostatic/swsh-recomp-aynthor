@@ -73,6 +73,7 @@ typedef struct {
     bool fail;
     bool branchy;  // program uses the pc state machine
     int ipa_mode;  // interpolation mode of the IPA being translated (-1 for plain loads)
+    int ipa_mul;   // its multiplier register (mode 1: the result is the "pass" value attr/w times this register)
     // GLSL (fields kept last: the MSL path's layout, including its out-of-range reg_used writes, is unchanged)
     bool glsl;               // emit Vulkan GLSL: dialect-specific constructs here, the rest via glsl_rewrite()
     bool uses_gmem_store;    // STG present: the gmem buffer is not readonly
@@ -252,9 +253,14 @@ static void attr_load(Ctx *c, int dst, uint32_t addr, const char *idx) {
                 strcpy(e, comp == 3 ? "0x3f800000u" : "0u");  // not provided by the vertex shader
             } else {
                 c->in_attr_mask |= 1u << a;
-                // IPA "pass" yields attr/w (the shader multiplies by w itself); Metal gives attr.
+                // IPA "pass" yields attr/w (the shader multiplies by w itself); Metal gives attr. "multiply" is the
+                // pass value times a register - usually w (Metal's attr again), but a shader may pass its own, e.g. a
+                // projective screen lookup (LAS Recomp d1c2d8e: attr * pos.w * multiplier, as the hardware does)
                 if (c->ipa_mode == 0) sprintf(e, "as_type<uint>(in.v%d[%d] * in.pos.w)", a, comp);
-                else sprintf(e, "as_type<uint>(in.v%d[%d])", a, comp);
+                else if (c->ipa_mode == 1 && c->ipa_mul != RZ) {
+                    char mb[16];
+                    sprintf(e, "as_type<uint>(in.v%d[%d] * in.pos.w * as_type<float>(%s))", a, comp, reg(c, c->ipa_mul, mb));
+                } else sprintf(e, "as_type<uint>(in.v%d[%d])", a, comp);
             }
         } else if (addr == 0x3FC) { c->uses_front_facing = true; strcpy(e, "(front_facing ? 0xFFFFFFFFu : 0u)"); }
         else if (addr == 0x2E0 || addr == 0x2E4) { sprintf(e, "as_type<uint>(point_coord[%d])", (addr >> 2) & 1); }
@@ -419,10 +425,14 @@ static bool emit_half(Ctx *c, uint64_t w) {
         sp(&c->body, "      bool l = %s, h = %s;\n", lx, ly);
         if (setp) {
             int pa = (int)bits(w, 3, 3), pb = (int)bits(w, 0, 3);
-            bool hand = bits(w, 49, 1);
-            if (hand) sp(&c->body, "      l = l && h; h = !l;\n");
-            if (pa != PT) { c->pred_used[pa] = 1; sp(&c->body, "      p%d = l %s pp;\n", pa, bool_op(bop)); }
-            if (pb != PT) { c->pred_used[pb] = 1; sp(&c->body, "      p%d = h %s pp;\n", pb, bool_op(bop)); }
+            if (bits(w, 49, 1)) {  // .H_AND: each half is combined with the predicate first, then they're ANDed
+                sp(&c->body, "      l = (l %s pp) && (h %s pp); h = !l;\n", bool_op(bop), bool_op(bop));
+                if (pa != PT) { c->pred_used[pa] = 1; sp(&c->body, "      p%d = l;\n", pa); }
+                if (pb != PT) { c->pred_used[pb] = 1; sp(&c->body, "      p%d = h;\n", pb); }
+            } else {
+                if (pa != PT) { c->pred_used[pa] = 1; sp(&c->body, "      p%d = l %s pp;\n", pa, bool_op(bop)); }
+                if (pb != PT) { c->pred_used[pb] = 1; sp(&c->body, "      p%d = h %s pp;\n", pb, bool_op(bop)); }
+            }
         } else {
             bool bf = bits(w, 49, 1);
             if (d != RZ) {
@@ -872,6 +882,7 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
             if (mode == 2) c->flat_mask |= 1u << at;
         }
         c->ipa_mode = mode;
+        c->ipa_mul = (int)bits(w, 20, 8);
         attr_load(c, d, addr, NULL);
         c->ipa_mode = -1;
         if (bits(w, 51, 1) && d != RZ) sp(&c->body, "    r%d = as_type<uint>(saturate(as_type<float>(r%d)));\n", d, d);
@@ -1388,8 +1399,13 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         if (bits(w, 45, 1)) { sprintf(u, "(-%s)", src); strcpy(src, u); }
         int dsz = dt & 3;
         bool dsg = dt & 4, sat = bits(w, 50, 1);
-        if (dsz == 0) sprintf(t, sat ? (dsg ? "uint(clamp(%s, -128, 127))" : "uint(clamp(%s, 0, 255))") : "(uint(%s) & 0xFFu)", src);
+        if (sat && !ssg) {  // .SAT from an unsigned source: compare unsigned (a U32 value above 0x7FFFFFFF isn't negative)
+            static const char *const hi[2][3] = {{"0xFFu", "0xFFFFu", ""}, {"0x7Fu", "0x7FFFu", "0x7FFFFFFFu"}};
+            if (dsz < 2 || dsg) sprintf(t, "min(uint(%s), %s)", src, hi[dsg][dsz < 2 ? dsz : 2]);
+            else sprintf(t, "uint(%s)", src);
+        } else if (dsz == 0) sprintf(t, sat ? (dsg ? "uint(clamp(%s, -128, 127))" : "uint(clamp(%s, 0, 255))") : "(uint(%s) & 0xFFu)", src);
         else if (dsz == 1) sprintf(t, sat ? (dsg ? "uint(clamp(%s, -32768, 32767))" : "uint(clamp(%s, 0, 65535))") : "(uint(%s) & 0xFFFFu)", src);
+        else if (sat && !dsg) sprintf(t, "uint(max(%s, 0))", src);  // S32 -> U32 .SAT: negatives become 0
         else sprintf(t, "uint(%s)", src);
         set_reg(c, d, t);
         if (bits(w, 47, 1)) {  // .CC: zero/sign flags of the result
@@ -1407,12 +1423,26 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         set_reg(c, d, t);
     } else if (OPM(0x5cf8000000000000ull, 0xfff8000000000000ull) || OPM(0x38f8000000000000ull, 0xfef8000000000000ull) ||
                OPM(0x5bf8000000000000ull, 0xfff8000000000000ull) || OPM(0x36f8000000000000ull, 0xfef8000000000000ull)) {  // SHF
+        // funnel shift of hi:lo (C:A). .W (bit 50) wraps the shift amount, otherwise it's clamped to the width;
+        // bits 37-38: 2 .U64 / 3 .S64 shift the full 64 bits (width 64), else 32. The immediate is 6 bits (20-25:
+        // bits 37-38 of the 19-bit B immediate are the width field). .CC / .X / .HI (47-49) aren't modelled: ignored as
+        // before (LAS Recomp d4c2ff6 fails the program on them, which would drop its draws here).
         bool right = (w >> 56) == 0x5c || (w >> 57) == (0x38 >> 1);
-        const char *sh = ((w >> 60) == 3) ? B(false) : R((int)bits(w, 20, 8));
+        char shb[16];
+        const char *sh = ((w >> 60) == 3) ? (sprintf(shb, "%uu", (unsigned)bits(w, 20, 6)), shb) : R((int)bits(w, 20, 8));
         const char *hi = R((int)bits(w, 39, 8));
-        if (right) sprintf(t, "uint((((ulong(%s) << 32) | ulong(%s)) >> (%s & 31u)))", hi, R(a), sh);
-        else sprintf(t, "uint((((ulong(%s) << 32) | ulong(%s)) << (%s & 31u)) >> 32)", hi, R(a), sh);
-        set_reg(c, d, t);
+        int width = bits(w, 38, 1) ? 64 : 32;
+        bool s64 = bits(w, 37, 2) == 3, wrap = bits(w, 50, 1);
+        sp(&c->body, wrap ? "    { uint s = %s & %du; ulong v = (ulong(%s) << 32) | ulong(%s);\n"
+                          : "    { uint s = min(%s, %du); ulong v = (ulong(%s) << 32) | ulong(%s);\n",
+           sh, wrap ? width - 1 : width, hi, R(a));
+        if (right && width == 64)
+            sprintf(t, "s >= 64u ? %s : uint(%s >> s)", s64 ? "uint(int(v >> 32) >> 31)" : "0u", s64 ? "long(v)" : "v");
+        else if (right) sprintf(t, "uint(v >> s)");
+        else if (width == 64) sprintf(t, "s >= 64u ? 0u : uint((v << s) >> 32)");
+        else sprintf(t, "uint((v << s) >> 32)");
+        if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = %s;\n", d, t); }
+        sp(&c->body, "    }\n");
     } else if (OPM(0xeed0000000000000ull, 0xfff8000000000000ull) || OPM(0xeed8000000000000ull, 0xfff8000000000000ull)) {  // LDG / STG
         bool store = bits(w, 51, 1);
         bool wide = bits(w, 45, 1);
@@ -1627,9 +1657,9 @@ static void glsl_rewrite(Ctx *c, Str *o, const char *src) {
     static const char *const map[][2] = {
         {"float2", "vec2"}, {"float3", "vec3"}, {"float4", "vec4"}, {"int2", "ivec2"}, {"int3", "ivec3"},
         {"int4", "ivec4"}, {"uint2", "uvec2"}, {"uint3", "uvec3"}, {"uint4", "uvec4"}, {"bool2", "bvec2"},
-        {"ulong", "uint64_t"}, {"rsqrt", "inversesqrt"}, {"rint", "roundEven"}, {"front_facing", "gl_FrontFacing"},
-        {"point_coord", "gl_PointCoord"}, {"lane", "gl_SubgroupInvocationID"}, {"vid", "uint(gl_VertexIndex)"},
-        {"iid", "uint(gl_InstanceIndex)"},
+        {"ulong", "uint64_t"}, {"long", "int64_t"}, {"rsqrt", "inversesqrt"}, {"rint", "roundEven"},
+        {"front_facing", "gl_FrontFacing"}, {"point_coord", "gl_PointCoord"}, {"lane", "gl_SubgroupInvocationID"},
+        {"vid", "uint(gl_VertexIndex)"}, {"iid", "uint(gl_InstanceIndex)"},
     };
     const char *p = src;
     while (*p) {
@@ -1740,15 +1770,26 @@ static const char glsl_prelude[] =
     "uint bfe_s(uint v, uint ctl) { uint pos = ctl & 0xFFu, len = (ctl >> 8) & 0xFFu; if (len == 0u) return 0u; if (pos >= 32u) return (int(v) < 0) ? 0xFFFFFFFFu : 0u; return uint(bitfieldExtract(int(v), int(pos), int(min(len, 32u - pos)))); }\n"
     "uint bfi(uint ins, uint ctl, uint base) { uint pos = ctl & 0xFFu, len = (ctl >> 8) & 0xFFu; if (len == 0u || pos >= 32u) return base; return bitfieldInsert(base, ins, int(pos), int(min(len, 32u - pos))); }\n"
     "float fswzadd(float a, float b, uint swz, uint lane) { uint m = (swz >> ((lane & 3u) * 2u)) & 3u; float ma = m == 1u ? -1.0f : (m == 3u ? 0.0f : 1.0f); float mb = m == 2u ? -1.0f : 1.0f; return a * ma + b * mb; }\n"
-    "uvec2 rsc(uvec2 c, vec4 s) { return (s.x == 1.0f && s.y == 1.0f) ? c : uvec2(floor((vec2(c) + 0.5f) * s.xy)); }\n"
-    // half -> float by bits, not unpackHalf2x16: NVIDIA's driver recognises unpacked halves and runs some of the
-    // fp32 math after them in native fp16, differently per shader, so a depth pre-pass and its colour pass (EQUAL
-    // test) placed wind-animated foliage apart: black slashes / flicker (tools: notes/PLAN.md 2026-10-08)
+    "uvec2 rsc(uvec2 c, vec4 s) { return (s.x == 1.0f && s.y == 1.0f) ? c : uvec2(floor((vec2(c) + 0.5f) * s.xy)); }\n";
+// The half <-> float helpers (glsl_finish: glsl_h2f_exact or glsl_h2f_native, then glsl_prelude_half).
+// Half -> float in vertex (and other pre-raster) shaders: by bits, not unpackHalf2x16. NVIDIA's driver recognises
+// unpacked halves and runs some of the fp32 math after them in native fp16, differently per shader, so a depth
+// pre-pass and its colour pass (EQUAL test) placed wind-animated foliage apart: black slashes / flicker (notes/PLAN.md
+// 2026-10-08).
+static const char glsl_h2f_exact[] =
     "float h2f(uint h) { uint s = (h & 0x8000u) << 16, e = (h >> 10) & 0x1Fu, m = h & 0x3FFu;"
     " if (e == 0u) { float d = float(m) * 5.9604644775390625e-8; return s != 0u ? -d : d; }"
     " if (e == 31u) return uintBitsToFloat(s | 0x7F800000u | (m << 13));"
     " return uintBitsToFloat(s | ((e + 112u) << 23) | (m << 13)); }\n"
-    "vec2 unpack_h2(uint v) { return vec2(h2f(v & 0xFFFFu), h2f(v >> 16)); }\n"
+    "vec2 unpack_h2(uint v) { return vec2(h2f(v & 0xFFFFu), h2f(v >> 16)); }\n";
+// ... and in fragment / compute shaders the native conversion: positions don't depend on them, and the by-bits
+// version (~12 integer ops and two branches per half) was half of the main lighting pass's GPU time on an Intel UHD
+// 770 and a third on an RTX 3080 Ti (the game's shaders use packed halves heavily). LARECOMP_VK_EXACT_H2F=1: by bits
+// in every stage.
+static const char glsl_h2f_native[] =
+    "float h2f(uint h) { return unpackHalf2x16(h).x; }\n"
+    "vec2 unpack_h2(uint v) { return unpackHalf2x16(v); }\n";
+static const char glsl_prelude_half[] =
     "vec2 hx(uint v, uint swz) { if (swz == 1u) return vec2(uintBitsToFloat(v)); vec2 h = unpack_h2(v); return swz == 2u ? h.xx : (swz == 3u ? h.yy : h); }\n"
     "uint hpack(vec2 r, uint merge, uint old) { if (merge == 1u) return floatBitsToUint(r.x); uint lo = packHalf2x16(vec2(r.x, 0.0f)), hi = packHalf2x16(vec2(r.y, 0.0f)); if (merge == 2u) return (old & 0xFFFF0000u) | lo; if (merge == 3u) return (old & 0xFFFFu) | (hi << 16); return lo | (hi << 16); }\n"
     "uint prmt(uint a, uint b, uint sel) { uint r = 0u; for (uint i = 0u; i < 4u; i++) { uint s = (sel >> (i * 4u)) & 7u; uint bt = s < 4u ? (a >> (s * 8u)) & 0xFFu : (b >> ((s - 4u) * 8u)) & 0xFFu; r |= bt << (i * 8u); } return r; }\n";
@@ -1777,6 +1818,10 @@ static ShaderInfo *glsl_finish(Ctx *c, bool any_branch, bool dbg) {
     int set = stage == STAGE_FRAGMENT ? 1 : 0;
     Str s = {0};
     sp(&s, "%s", glsl_prelude);
+    static int exact = -1;
+    if (exact < 0) exact = getenv("LARECOMP_VK_EXACT_H2F") && atoi(getenv("LARECOMP_VK_EXACT_H2F")) != 0;
+    sp(&s, "%s%s", !exact && (stage == STAGE_FRAGMENT || stage == STAGE_COMPUTE) ? glsl_h2f_native : glsl_h2f_exact,
+       glsl_prelude_half);
     for (int i = 0; i < 18; i++) {
         if (!(info->cbuf_mask & (1u << i))) continue;
         uint32_t n = info->cbuf_size[i] / 16;

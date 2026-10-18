@@ -53,6 +53,7 @@ Tudo o que foi usado para diagnosticar o port. As variáveis de ambiente valem p
 | `LARECOMP_INPUT_LOOP=<início>:<período>` | com `LARECOMP_INPUT`, repete as entradas de `[início, início + período)` para sempre; depois de cada batalha / captura fica parado 300 quadros, e dentro do encontro foge (B, três vezes para baixo, A). Usado por `tools/capture_loop.py run <nome>` / `scan <nome>` (pares antes/depois de cada encontro em `build/capture_loop/<nome>/`) |
 | `LARECOMP_SHOT_RAW=<arquivo>` + `LARECOMP_SHOT_RAW_LAST=<quadro>` | a série `LARECOMP_SCREENSHOT_EVERY/FROM` vai para um arquivo cru (480x270 RGB por quadro, sem PNG) e o jogo sai no último quadro; lido por `tools/bateria_scan.py` |
 | `LARECOMP_EXIT_AT_PRESENT=<n>` | com `LARECOMP_FRAMETIME_CSV`, sai no presente n; usado por `tools/perf_ab.py` |
+| `EXE=<exe> tools/bateria.sh ...` / variante `B=EXE=<exe>,LARECOMP_GAME_LIB=<dll>` no `tools/perf_ab.py` | roda outra build do runtime (uma de referência compilada à parte, ex. `git worktree add ../lg-base HEAD` + `make build/lasrecomp.exe` lá, copiada para `build/base/`); na bateria, o Eevee usa então `build/lasgame.dll` pelo caminho. Uma DLL só carrega com o exe do mesmo `GAMELIB_ID` |
 | `LARECOMP_PIPE_STATS=<vertex program, hex>\|all` | o que o driver informa de cada shader compilado (registradores, spills, tamanho do código: `[pipestats]`) e o desenho dos atributos de vértice do programa (`VK_KHR_pipeline_executable_properties`) |
 | `LARECOMP_LOG_VCOPY=1` (com `LARECOMP_GPUPROF_AT`) | uma linha por cópia de stream de vértice nos quadros perfilados: bytes pedidos, tamanho do buffer ligado, stride, índice máximo |
 | `LARECOMP_LOG_GPUWRITES=1` | loga cada faixa de memória que um compute pode escrever (storage buffers ligados) ao entrar no conjunto |
@@ -77,6 +78,7 @@ Tudo o que foi usado para diagnosticar o port. As variáveis de ambiente valem p
 | `LARECOMP_LOG_SKIN=1` (+ `LARECOMP_DEBUG_VSCB=1`) | detalha draws com esqueleto: vértices, índices/pesos dos ossos, estatística da paleta |
 | `LARECOMP_DUMP_SKIN=<n>` | grava as entradas do n-ésimo draw com esqueleto em `build/skin/` |
 | `LARECOMP_VK_UBO_DIRECT=1` | uniforms lidos direto da memória do jogo na GPU (experimento) |
+| `LARECOMP_VK_EXACT_H2F=1` | meia precisão (half) convertida bit a bit em todos os estágios, como antes; sem ela só os vertex shaders fazem isso e fragment/compute usam `unpackHalf2x16` (HISTORICO 63) |
 | `LARECOMP_VK_COPY_VERTICES=1` | força a cópia de **todos** os vértices e índices, até os que um compute escreve (podem ficar velhos); para o uso normal, `LARECOMP_VERTEX_READ` |
 | `LARECOMP_NO_SCALE=1` | desliga a escala de resolução interna |
 | `LARECOMP_SCALE=<f>` | altura de render = 1080 x f (ignora o launcher). Com `LARECOMP_FPS=0` mede a folga da GPU |

@@ -3,7 +3,8 @@ runs, so only runs taken in turn mean anything).
 
   perf_ab.py <eevee|pikachu> [--runs N] [--mode turbo|60] [--route mundo] A=VAR=1,VAR2=x B=VAR=2 ...
 
-Each variant is NAME=VAR=value[,VAR=value...] (NAME= alone: no variables). Runs A, B, A, B... (N each), each a scripted
+Each variant is NAME=VAR=value[,VAR=value...] (NAME= alone: no variables). EXE=<path> in a variant runs that runtime
+build instead of build/lasrecomp.exe (with LARECOMP_GAME_LIB=<its lasgame.dll> when the game code differs too). Runs A, B, A, B... (N each), each a scripted
 route from a copy of the save (tools/bateria.sh's "mundo": walking Pewter City), unlimited frame rate (turbo) or the
 paced 60 fps mode, until present LARECOMP_EXIT_AT_PRESENT. Per run: median and p1/p99 frame time over the walking window;
 then per variant the median of the runs' medians with min-max, and for two variants the ratio with a bootstrap 95%
@@ -44,9 +45,10 @@ def run_once(game, mode, env_extra, tag):
         env["LARECOMP_GAME_LIB"] = os.path.join(ROOT, "extracted-pikachu", "lasgame.dll")
     env["PATH"] = "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;" + env.get("PATH", "")  # (the runtime's DLLs: SDL3, ffmpeg...)
     env.update(env_extra)
+    exe = env.pop("EXE", os.path.join(ROOT, "build", "lasrecomp.exe"))
     log = os.path.join(out, "log.txt")
     with open(log, "w") as lf:
-        p = subprocess.Popen([os.path.join(ROOT, "build", "lasrecomp.exe"), root, "--play"], cwd=ROOT, env=env, stdout=lf, stderr=subprocess.STDOUT)
+        p = subprocess.Popen([exe, root, "--play"], cwd=ROOT, env=env, stdout=lf, stderr=subprocess.STDOUT)
         t0 = time.time()
         done = False
         while time.time() - t0 < 400:
