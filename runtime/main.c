@@ -190,7 +190,11 @@ int main(int argc, char **argv) {
             rt_fnhook_set_build(build);
             extern const char *g_game_version;  // (runtime/services/am.c)
             g_game_version = game_version(exefs);
-            if (build == GAME_BUILD_OTHER) LOG("[boot] %s: a build without address tables, 60 fps and wild battles stay off\n", exefs);
+            extern bool swsh60_supported(const char *exefs);
+            if (build == GAME_BUILD_OTHER && !swsh60_supported(exefs))
+                LOG("[boot] %s: a build without address tables, 60 fps and wild battles stay off\n", exefs);
+            extern void swsh60_configure(const char *exefs);
+            swsh60_configure(exefs);  // (runtime/hle/swsh60.c: the 60 fps option on Sword / Shield)
         }
         { extern void fps60_configure(void); fps60_configure(); }  // (runtime/hle/fps60.c: the launcher's 60 fps option)
         { extern void wildbattle_configure(void); wildbattle_configure(); }  // (runtime/hle/wildbattle.c: the wild battles option)

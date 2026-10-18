@@ -651,7 +651,10 @@ NVN(nvnWindowBuilderSetDevice) { G(uint64_t, A(0), 0) = A(1); }
 NVN(nvnWindowBuilderSetDefaults) { memset(AP(0) + 8, 0, 0x20); G(uint32_t, A(0), 0x20) = 1; }
 NVN(nvnWindowBuilderSetNativeWindow) { G(uint64_t, A(0), 8) = A(1); }
 NVN(nvnWindowBuilderSetTextures) { G(uint32_t, A(0), 0x10) = (uint32_t)A(1); G(uint64_t, A(0), 0x18) = A(2); }
-NVN(nvnWindowBuilderSetPresentInterval) { G(uint32_t, A(0), 0x20) = (uint32_t)A(1); }
+NVN(nvnWindowBuilderSetPresentInterval) {
+    G(uint32_t, A(0), 0x20) = (uint32_t)A(1);
+    LOG("[nvn] WindowBuilderSetPresentInterval %d (lr %llx)\n", (int)A(1), (unsigned long long)c->x[30]);
+}
 NVN(nvnWindowBuilderSetNumActiveTextures) { G(uint32_t, A(0), 0x24) = (uint32_t)A(1); }
 NVN(nvnWindowBuilderGetDevice) { RET(G(uint64_t, A(0), 0)); }
 NVN(nvnWindowBuilderGetNativeWindow) { RET(G(uint64_t, A(0), 8)); }
@@ -682,7 +685,15 @@ NVN(nvnWindowGetNumTextures) { RET(WIN->num); }
 NVN(nvnWindowGetNumActiveTextures) { RET(WIN->active); }
 NVN(nvnWindowSetNumActiveTextures) { WIN->active = (int)A(1); }
 NVN(nvnWindowGetPresentInterval) { RET(WIN->interval); }
-NVN(nvnWindowSetPresentInterval) { WIN->interval = (int)A(1); }
+NVN(nvnWindowSetPresentInterval) {
+    static int forced = -1;  // LARECOMP_PRESENT_INTERVAL=<n>: the interval the game asks for is replaced (research, 60 fps)
+    if (forced < 0) forced = getenv("LARECOMP_PRESENT_INTERVAL") ? atoi(getenv("LARECOMP_PRESENT_INTERVAL")) : 0;
+    if (forced > 0) c->x[1] = (uint64_t)forced;
+    { extern int swsh60_interval(int asked); c->x[1] = (uint64_t)swsh60_interval((int)A(1)); }  // (runtime/hle/swsh60.c)
+    if (WIN->interval != (int)A(1))  // (the call site: a 60 fps patch changes the value the game passes, docs/DIAGNOSTICO-SWSH.md)
+        LOG("[nvn] WindowSetPresentInterval %d -> %d (lr %llx)\n", WIN->interval, (int)A(1), (unsigned long long)c->x[30]);
+    WIN->interval = (int)A(1);
+}
 NVN(nvnWindowSetCrop) { int *cr = WIN->crop; cr[0] = (int)A(1); cr[1] = (int)A(2); cr[2] = (int)A(3); cr[3] = (int)A(4); }
 NVN(nvnWindowGetCrop) { memcpy(AP(1), WIN->crop, 16); }
 NVN(nvnWindowAcquireTexture) {

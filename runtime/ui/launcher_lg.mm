@@ -271,15 +271,22 @@ extern "C" void launcher_lg_run(const char *root) {
         ImGui::Combo(T("Resolution", "Resolução"), &res, g_pt ? res_pt : res_en, 5);
         if (ImGui::Checkbox(T("Fullscreen", "Tela cheia"), &full)) SDL_SetWindowFullscreen(win, full);
         ImGui::Checkbox(T("Anti-aliasing (SMAA)", "Suavizar serrilhado (SMAA)"), &smaa);
-        // (both hook game functions by address: builds without address tables keep them off, runtime/fnhook.c)
+        // (both hook game functions by address: builds without address tables keep them off, runtime/fnhook.c;
+        // Sword / Shield's 60 fps is runtime/hle/swsh60.c, by build too)
+        extern bool swsh60_supported(const char *exefs);
+        bool swsh = setup_ready() && swsh60_supported("extracted/exefs");
         bool known = !setup_ready() || game_build("extracted/exefs") != GAME_BUILD_OTHER;
         const char *only = T("Only with version 1.0.0 (the base game) of Let's Go Eevee or Pikachu for now.",
                              "Por enquanto só na versão 1.0.0 (o jogo base) do Let's Go Eevee ou Pikachu.");
-        ImGui::BeginDisabled(!known);
+        ImGui::BeginDisabled(!known && !swsh);
         ImGui::Checkbox(T("60 fps (experimental)", "60 fps (experimental)"), &fps60);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", !known ? only : T("The world at 60 fps; menus and the Pokédex smoothed; battles and captures stay at 30.",
-                                                     "Mundo a 60 fps; menus e Pokédex suavizados; batalhas e capturas continuam a 30."));
+            ImGui::SetTooltip("%s", swsh ? T("The whole game at 60 fps, like the community's 60 fps patch.",
+                                             "O jogo todo a 60 fps, como o patch de 60 fps da comunidade.")
+                                    : !known ? only : T("The world at 60 fps; menus and the Pokédex smoothed; battles and captures stay at 30.",
+                                                        "Mundo a 60 fps; menus e Pokédex suavizados; batalhas e capturas continuam a 30."));
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(!known);
         ImGui::Checkbox(T("Wild battles (experimental)", "Batalhas selvagens (experimental)"), &wildb);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("%s", !known ? only : T("Touching a wild Pokémon starts a classic battle, then the capture, instead of going straight to the capture.",
