@@ -3121,14 +3121,18 @@ static void copy_texture(const TexRefRec *src, const TexRefRec *dst, uint64_t fl
     VkCommandBuffer cb = vk_cmd();
     vk_full_barrier(cb);
     VkImageAspectFlags sa = s->aspect, da = d->aspect;
-    if (s->samples > 1 && d->samples == 1 && sw == dw && sh == dh && s->format == d->format && !(sa & VK_IMAGE_ASPECT_DEPTH_BIT)) {
+    // NVN copy flags: 1 linear filter, 2 2D engine, 4 / 8 mirror X / Y (Sword's scene-change snapshot is copied with
+    // MIRROR_Y and drawn back with its Y negated: ignoring the flag showed the snapshot upside down)
+    bool mirror_x = flags & 4, mirror_y = flags & 8;
+    if (s->samples > 1 && d->samples == 1 && sw == dw && sh == dh && s->format == d->format && !(sa & VK_IMAGE_ASPECT_DEPTH_BIT) &&
+        !mirror_x && !mirror_y) {
         VkImageResolve rv = {.srcSubresource = {sa, slv, sly, 1}, .srcOffset = {sx0, sy0, 0}, .dstSubresource = {da, dlv, dly, 1},
                              .dstOffset = {dx0, dy0, 0}, .extent = {(uint32_t)sw, (uint32_t)sh, 1}};
         vkCmdResolveImage(cb, s->image, VK_IMAGE_LAYOUT_GENERAL, d->image, VK_IMAGE_LAYOUT_GENERAL, 1, &rv);
         return;
     }
     if (s->samples != d->samples) return;
-    if (sw == dw && sh == dh && s->format == d->format) {
+    if (sw == dw && sh == dh && s->format == d->format && !mirror_x && !mirror_y) {
         VkImageCopy c = {.srcSubresource = {sa, slv, sly, 1}, .srcOffset = {sx0, sy0, 0}, .dstSubresource = {da, dlv, dly, 1},
                          .dstOffset = {dx0, dy0, 0}, .extent = {(uint32_t)sw, (uint32_t)sh, 1}};
         vkCmdCopyImage(cb, s->image, VK_IMAGE_LAYOUT_GENERAL, d->image, VK_IMAGE_LAYOUT_GENERAL, 1, &c);
@@ -3141,6 +3145,8 @@ static void copy_texture(const TexRefRec *src, const TexRefRec *dst, uint64_t fl
                       .srcOffsets = {{sx0, sy0, 0}, {sx0 + sw, sy0 + sh, 1}},
                       .dstSubresource = {depth ? (da & VK_IMAGE_ASPECT_DEPTH_BIT ? VK_IMAGE_ASPECT_DEPTH_BIT : da) : da, dlv, dly, 1},
                       .dstOffsets = {{dx0, dy0, 0}, {dx0 + dw, dy0 + dh, 1}}};
+    if (mirror_x) { bl.dstOffsets[0].x = dx0 + dw; bl.dstOffsets[1].x = dx0; }  // (reversed offsets: a mirrored blit)
+    if (mirror_y) { bl.dstOffsets[0].y = dy0 + dh; bl.dstOffsets[1].y = dy0; }
     bool linear = (flags & 1) && !depth && !rt_kind(st_->format);
     dl_note("  blit %p lv%u/%u %ux%u (%d,%d %dx%d) -> %p lv%u/%u %ux%u (%d,%d %dx%d) %s", (void *)s->image, slv, s->levels, s->width,
             s->height, sx0, sy0, sw, sh, (void *)d->image, dlv, d->levels, d->width, d->height, dx0, dy0, dw, dh, linear ? "linear" : "nearest");
