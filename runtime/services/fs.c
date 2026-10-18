@@ -385,6 +385,70 @@ static Service *open_romfs_storage(void) {
     return service_new("IStorage(romfs)", storage, st);
 }
 
+// ------------------------------------------------------------------ add-on content (DLC) data
+// A DLC's RomFS image sits next to the game's: <data root>/aoc/<data id as 16 hex digits>.bin (Sword's Expansion
+// Pass: 0100abf008969001.bin and ...002.bin, each a romfs.bin built from the DLC's own RomFS, tools/romfs_pack.c).
+// nn::aoc lists what is there (runtime/services/misc.c); the game mounts one with OpenDataStorageByDataId. No folder:
+// no DLC, as before.
+static void aoc_dir(char *out, size_t n) {
+    snprintf(out, n, "%s", g_romfs_dir);  // extracted/romfs -> extracted/aoc
+    char *slash = strrchr(out, '/');
+    if (slash) snprintf(slash + 1, n - (size_t)(slash + 1 - out), "aoc");
+    else snprintf(out, n, "aoc");
+}
+
+int aoc_list(uint64_t base_id, uint32_t *indices, int max) {
+    char dir[1024];
+    aoc_dir(dir, sizeof dir);
+    DIR *d = opendir(dir);
+    if (!d) return 0;
+    int n = 0;
+    for (struct dirent *e; (e = readdir(d));) {
+        unsigned long long id;
+        char tail[8];
+        if (sscanf(e->d_name, "%16llx.%7s", &id, tail) != 2 || strcmp(tail, "bin")) continue;
+        if (id <= base_id || id > base_id + 0xFFF) continue;  // (another title's DLC)
+        if (n < max) indices[n] = (uint32_t)(id - base_id);
+        n++;
+    }
+    closedir(d);
+    for (int i = 1; i < n && i < max; i++)  // (ascending, like the console's list)
+        for (int j = i; j > 0 && indices[j - 1] > indices[j]; j--) { uint32_t t = indices[j]; indices[j] = indices[j - 1]; indices[j - 1] = t; }
+    return n;
+}
+
+static void plain_storage(Service *s, IpcReq *req, IpcResp *resp) {  // (no mod overlay: that is the game's RomFS only)
+    Storage *st = s->state;
+    switch (req->cmd) {
+    case 0: {  // Read(offset, size) -> B buffer
+        uint64_t off = IN(uint64_t, 0), size = IN(uint64_t, 8);
+        IpcBuf *b = out_buf(req, 0);
+        if (!b) { resp->result = MAKE_RESULT(2, 6001); break; }
+        if (size > b->size) size = b->size;
+        if (pread(st->fd, (void *)(uintptr_t)b->addr, size, (off_t)off) < 0)
+            LOG("[fs] aoc storage read failed at %llx: %s\n", (unsigned long long)off, strerror(errno));
+        break;
+    }
+    case 4: OUT(uint64_t, 0) = st->size; resp_size(resp, 8); break;  // GetSize
+    default: LOG("[fs] IStorage(aoc) cmd %u (ok)\n", req->cmd);
+    }
+}
+
+static Service *open_aoc_storage(uint64_t data_id) {
+    char dir[1024], path[1100];
+    aoc_dir(dir, sizeof dir);
+    snprintf(path, sizeof path, "%s/%016llx.bin", dir, (unsigned long long)data_id);
+    int fd = open(path, O_RDONLY);  // (binary: runtime/platform/windows.c sets _fmode)
+    if (fd < 0) return NULL;
+    Storage *st = calloc(1, sizeof *st);
+    st->fd = fd;
+    struct stat sb;
+    fstat(fd, &sb);
+    st->size = sb.st_size;
+    LOG("[fs] add-on content %016llx: %s (%llu bytes)\n", (unsigned long long)data_id, path, (unsigned long long)st->size);
+    return service_new("IStorage(aoc)", plain_storage, st);
+}
+
 // A file inside the RomFS image for readers outside the fs service (the movie player, runtime/hle/movie.c): the
 // image's fd and the file's byte range in it. path: a RomFS path ("bin/movies/..."). False when there's no image
 // (a source checkout with only extracted/romfs/) or no such file.
@@ -628,10 +692,13 @@ SERVICE("fsp-srv", fsp_srv) {
         break;
     }
     case 200: ipc_return_object(resp, open_romfs_storage()); break;  // OpenDataStorageByCurrentProcess
-    case 202:  // OpenDataStorageByDataId (system data archives)
+    case 202: {  // OpenDataStorageByDataId: a DLC's data (above), or a system data archive (not available)
+        Service *aoc = open_aoc_storage(IN(uint64_t, 8));
+        if (aoc) { ipc_return_object(resp, aoc); break; }
         LOG("[fs] OpenDataStorageByDataId %llx (not available)\n", IN(uint64_t, 8));
         resp->result = MAKE_RESULT(2, 1001);
         break;
+    }
     case 1005: OUT(uint32_t, 0) = 0; resp_size(resp, 4); break;  // GetGlobalAccessLogMode
     case 1003: case 1004: case 1006: break;
     case 1011: memset(resp->data, 0, 0x10); resp_size(resp, 0x10); break;
