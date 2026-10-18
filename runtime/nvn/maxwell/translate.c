@@ -1021,21 +1021,48 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
     } else if (OPM(0x5c68000000000000ull, 0xfff8000000000000ull) || OPM(0x4c68000000000000ull, 0xfff8000000000000ull) ||
                OPM(0x3868000000000000ull, 0xfef8000000000000ull)) {  // FMUL
         static const char *const scale[] = {"", " * 0.5f", " * 0.25f", " * 0.125f", " * 8.0f", " * 4.0f", " * 2.0f", ""};
-        sprintf(t, "(%s * %s%s)", F(R(a)), NA(F(B(true)), bits(w, 48, 1), false), scale[bits(w, 41, 3)]);
+        char fa[512], fb[512];
+        snprintf(fa, sizeof fa, "%s", F(R(a)));
+        snprintf(fb, sizeof fb, "%s", NA(F(B(true)), bits(w, 48, 1), false));
+        if (bits(w, 44, 2) >= 2)  // .FMZ (docs/HISTORICO.md item 65)
+            sprintf(t, "((%s == 0.0f || %s == 0.0f) ? 0.0f : %s * %s%s)", fa, fb, fa, fb, scale[bits(w, 41, 3)]);
+        else
+            sprintf(t, "(%s * %s%s)", fa, fb, scale[bits(w, 41, 3)]);
         set_reg(c, d, FRES(t, bits(w, 50, 1)));
     } else if (OPM(0x1e00000000000000ull, 0xff00000000000000ull)) {  // FMUL32I
-        sprintf(t, "(%s * as_type<float>(0x%08xu))", F(R(a)), (uint32_t)bits(w, 20, 32));
+        char fa[512];
+        snprintf(fa, sizeof fa, "%s", F(R(a)));
+        uint32_t imm = (uint32_t)bits(w, 20, 32);
+        if (bits(w, 53, 2) >= 2 && (imm & 0x7FFFFFFFu))  // .FMZ (docs/HISTORICO.md item 65)
+            sprintf(t, "((%s == 0.0f) ? 0.0f : %s * as_type<float>(0x%08xu))", fa, fa, imm);
+        else if (bits(w, 53, 2) >= 2)
+            sprintf(t, "0.0f");  // (.FMZ by a zero immediate: 0 whatever a is, inf and NaN included)
+        else
+            sprintf(t, "(%s * as_type<float>(0x%08xu))", fa, imm);
         set_reg(c, d, FRES(t, bits(w, 55, 1)));
     } else if (OPM(0x5980000000000000ull, 0xff80000000000000ull) || OPM(0x4980000000000000ull, 0xff80000000000000ull) ||
                OPM(0x5180000000000000ull, 0xff80000000000000ull) || OPM(0x3280000000000000ull, 0xfe80000000000000ull)) {  // FFMA
         const char *bv;
         char cbuf_c[256], bbuf[256];
         const char *cv = operand_c_for_ffma(c, w, cbuf_c, &bv, bbuf);
-        sprintf(t, "fma(%s, %s, %s)", F(R(a)), NA(F(bv), bits(w, 48, 1), false), NA(F(cv), bits(w, 49, 1), false));
+        char fa[512], fb[512], fc[512];
+        snprintf(fa, sizeof fa, "%s", F(R(a)));
+        snprintf(fb, sizeof fb, "%s", NA(F(bv), bits(w, 48, 1), false));
+        snprintf(fc, sizeof fc, "%s", NA(F(cv), bits(w, 49, 1), false));
+        if (bits(w, 53, 2) >= 2)  // .FMZ: 0 * anything = 0, so the product adds nothing (docs/HISTORICO.md item 65)
+            sprintf(t, "((%s == 0.0f || %s == 0.0f) ? %s : fma(%s, %s, %s))", fa, fb, fc, fa, fb, fc);
+        else
+            sprintf(t, "fma(%s, %s, %s)", fa, fb, fc);
         set_reg(c, d, FRES(t, bits(w, 50, 1)));
     } else if (OPM(0x0c00000000000000ull, 0xfc00000000000000ull)) {  // FFMA32I
         sprintf(u, "as_type<float>(0x%08xu)", (uint32_t)bits(w, 20, 32));
-        sprintf(t, "fma(%s, %s, %s)", NA(F(R(a)), bits(w, 56, 1), false), u, NA(F(R(d)), bits(w, 57, 1), false));
+        char fa[512], fc[512];
+        snprintf(fa, sizeof fa, "%s", NA(F(R(a)), bits(w, 56, 1), false));
+        snprintf(fc, sizeof fc, "%s", NA(F(R(d)), bits(w, 57, 1), false));
+        if (bits(w, 53, 2) >= 2)  // .FMZ
+            sprintf(t, "((%s == 0.0f || %s == 0.0f) ? %s : fma(%s, %s, %s))", fa, u, fc, fa, u, fc);
+        else
+            sprintf(t, "fma(%s, %s, %s)", fa, u, fc);
         set_reg(c, d, FRES(t, bits(w, 55, 1)));
     } else if (OPM(0x5c60000000000000ull, 0xfff8000000000000ull) || OPM(0x4c60000000000000ull, 0xfff8000000000000ull) ||
                OPM(0x3860000000000000ull, 0xfef8000000000000ull)) {  // FMNMX
