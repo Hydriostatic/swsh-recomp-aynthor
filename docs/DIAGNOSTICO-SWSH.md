@@ -98,6 +98,16 @@ resolvidas por nome em execução.
 
 Ainda não testado: escolher o inicial e a primeira batalha, áudio (não conferido), o resto da história.
 
+## Bugs gráficos conhecidos (abertos)
+
+Vistos jogando (sessão de 18/10, `build/play5.log`, por volta de t=1100 s / quadro ~32000). As capturas do jogador
+ficam em `build/bugs/` (fora do git: são imagens do jogo).
+
+| # | Sintoma | Onde | Hipóteses a conferir |
+|---|---|---|---|
+| G1 | **Brilho estourado:** manchas brancas grandes e borradas sobre objetos e perto das fontes de luz (abajur, cômoda, janela), atravessando paredes. Cena correta por baixo | Quarto do jogador e sala, Postwick (`brilho-estourado-quarto.webp`) | Halos/flares de luz desenhados sem oclusão: o jogo deve decidir a visibilidade por **consulta de oclusão** (`nvnCommandBufferReportCounter`, amostras que passaram) ou lendo a profundidade; se o runtime responde "visível" sempre (ou o contador errado), todo flare aparece, inclusive atrás de paredes. Outra possibilidade: bloom com alvo HDR (R11G11B10/RGBA16F) sem clamp, ou mistura aditiva com fator errado. Conferir com `LARECOMP_DEBUG_FRAME`/F9 qual passe desenha as manchas |
+| G2 | **Cena de ponta-cabeça** por um momento ao trocar de cena ou cenário | Escada da casa, ao descer (`cena-de-ponta-cabeca-escada.webp`) | A transição usa uma cópia do quadro anterior (captura do framebuffer para o fade ou a troca): uma cópia ou um blit (`CopyTextureToTexture`, `Downsample`, ou a textura amostrada depois) com a origem Y invertida em relação ao resto. O Let's Go não usa esse caminho, por isso nunca apareceu lá. Conferir com `LARECOMP_DEBUG_FRAMES` na troca de cena |
+
 ## O que isso indica para o port
 
 1. **O recompilador serve como está.** Nenhuma instrução nova, nenhuma mudança de layout de memória.
