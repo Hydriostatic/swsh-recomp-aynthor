@@ -174,8 +174,9 @@ static void relocate(Module *m) {
 
 void loader_load(const char *exefs) {
     char path[1024];
-    // Let's Go: the game, the SDK, glslc (runtime GLSL compiler) and multimedia (movie::). Same order and bases as
-    // the generated code (Makefile `gen`, tools/gamelib_entry.c).
+    // The game, the SDK, glslc (runtime GLSL compiler) and multimedia (movie::): Let's Go has glslc as subsdk0,
+    // Sword/Shield as subsdk1. Imports bind by name (resolve), so only the names and bases matter. Same order and
+    // bases as the generated code (Makefile `gen`, tools/gamelib_entry.c).
     static const struct { const char *name; uint64_t base; } mods[] = {
         {"main", MAIN_BASE}, {"sdk", SDK_BASE}, {"subsdk0", SUBSDK0_BASE}, {"subsdk1", SUBSDK1_BASE}};
     for (unsigned i = 0; i < sizeof mods / sizeof mods[0]; i++) {

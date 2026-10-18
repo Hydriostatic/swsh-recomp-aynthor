@@ -22,10 +22,13 @@
 #include "romfs_build.h"
 
 #define ROOT "extracted"  // (in the data root, the working directory)
-// The two games (program ids, main.npdm's ACI0), any version. The 60 fps and wild battles options and the generator's
-// instruction patches are addresses in the main: only the builds with address tables get them (game_build).
+// The games (program ids, main.npdm's ACI0), any version. The 60 fps and wild battles options and the generator's
+// instruction patches are addresses in Let's Go's main: only the builds with address tables get them (game_build);
+// Sword and Shield are GAME_BUILD_OTHER, so those stay off for them.
 #define TITLE_EEVEE 0x0100187003A36000ull
 #define TITLE_PIKACHU 0x010003F003A34000ull
+#define TITLE_SWORD 0x0100ABF008968000ull
+#define TITLE_SHIELD 0x01008DB008C2C000ull
 static const uint8_t EEVEE_100[8] = {0x0a, 0x3f, 0x0d, 0x21, 0xe6, 0x7d, 0xad, 0x80};    // Let's Go, Eevee! v1.0.0 main
 static const uint8_t PIKACHU_100[8] = {0x1c, 0x37, 0x56, 0x92, 0xde, 0x4f, 0x4b, 0x87};  // Let's Go, Pikachu! v1.0.0
 
@@ -64,7 +67,7 @@ static uint64_t program_id(const char *exefs) {
 
 static bool game_ok(const char *exefs) {
     uint64_t id = program_id(exefs);
-    return id == TITLE_EEVEE || id == TITLE_PIKACHU;
+    return id == TITLE_EEVEE || id == TITLE_PIKACHU || id == TITLE_SWORD || id == TITLE_SHIELD;
 }
 
 int game_build(const char *exefs) {
@@ -87,6 +90,7 @@ const char *game_version(const char *exefs) {
         {{0x0a, 0x3f, 0x0d, 0x21, 0xe6, 0x7d, 0xad, 0x80}, "1.0.0"},  // Eevee
         {{0x1c, 0x37, 0x56, 0x92, 0xde, 0x4f, 0x4b, 0x87}, "1.0.0"},  // Pikachu
         {{0xc2, 0x08, 0xdb, 0x6a, 0x4e, 0xf4, 0x36, 0x1f}, "1.0.2"},  // Pikachu (issue #1's log)
+        {{0x8d, 0xaf, 0xed, 0xbb, 0x5b, 0xe8, 0x1c, 0x2c}, "1.0.0"},  // Sword (docs/DIAGNOSTICO-SWSH.md)
     };
     char p[1100];
     snprintf(p, sizeof p, "%s/main", exefs);
@@ -104,7 +108,26 @@ const char *game_version(const char *exefs) {
 
 const char *game_name(const char *exefs) {
     uint64_t id = program_id(exefs);
-    return id == TITLE_EEVEE ? "Eevee" : id == TITLE_PIKACHU ? "Pikachu" : NULL;
+    return id == TITLE_EEVEE ? "Eevee" : id == TITLE_PIKACHU ? "Pikachu" : id == TITLE_SWORD ? "Sword"
+         : id == TITLE_SHIELD ? "Shield" : NULL;
+}
+
+const char *game_title(const char *exefs) {
+    uint64_t id = program_id(exefs);
+    return id == TITLE_EEVEE ? "Pokémon: Let's Go, Eevee!" : id == TITLE_PIKACHU ? "Pokémon: Let's Go, Pikachu!"
+         : id == TITLE_SWORD ? "Pokémon Sword" : id == TITLE_SHIELD ? "Pokémon Shield" : NULL;
+}
+
+const char *game_title_id(const char *exefs) {
+    uint64_t id = program_id(exefs);
+    return id == TITLE_EEVEE ? "0100187003A36000" : id == TITLE_PIKACHU ? "010003F003A34000"
+         : id == TITLE_SWORD ? "0100ABF008968000" : id == TITLE_SHIELD ? "01008DB008C2C000" : NULL;
+}
+
+const char *game_pair_title_id(const char *exefs) {
+    uint64_t id = program_id(exefs);
+    return id == TITLE_EEVEE ? "010003F003A34000" : id == TITLE_PIKACHU ? "0100187003A36000"
+         : id == TITLE_SWORD ? "01008DB008C2C000" : id == TITLE_SHIELD ? "0100ABF008968000" : NULL;
 }
 
 bool setup_ready(void) {

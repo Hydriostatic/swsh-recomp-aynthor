@@ -583,9 +583,12 @@ static void filesystem(Service *s, IpcReq *req, IpcResp *resp) {
 static Service *open_host_fs(const char *sub) {
     HostFs *fs = calloc(1, sizeof *fs);
     if (getenv("LARECOMP_SAVE_DIR")) g_save_dir = getenv("LARECOMP_SAVE_DIR");  // test runs use a scratch copy
-    // Let's Go, Pikachu! keeps its own folder (like the Switch, a save per game); Eevee keeps save/.
-    bool pikachu = g_program_id == 0x010003F003A34000ull && !getenv("LARECOMP_SAVE_DIR") && !strcmp(g_save_dir, "save");
-    snprintf(fs->root, sizeof fs->root, "%s/%s", pikachu ? "save-pikachu" : g_save_dir, sub);
+    // Pikachu, Sword and Shield keep their own folder (like the Switch, a save per game); Eevee keeps save/.
+    const char *own = g_program_id == 0x010003F003A34000ull ? "save-pikachu"
+                    : g_program_id == 0x0100ABF008968000ull ? "save-sword"
+                    : g_program_id == 0x01008DB008C2C000ull ? "save-shield" : NULL;
+    if (getenv("LARECOMP_SAVE_DIR") || strcmp(g_save_dir, "save")) own = NULL;
+    snprintf(fs->root, sizeof fs->root, "%s/%s", own ? own : g_save_dir, sub);
     char cmd[1200];
     snprintf(cmd, sizeof cmd, "%s", fs->root);
     for (char *q = cmd + 1; *q; q++)
