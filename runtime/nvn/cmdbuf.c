@@ -1,14 +1,29 @@
-// NVN command buffers: commands are recorded into the guest-provided command memory as CmdRec
-// records, so the game's own memory management and out-of-memory callbacks work as designed.
+// NVN command buffers: commands are recorded against the guest-provided command memory as CmdRec
+// records, so the game's own memory management and out-of-memory callbacks work as designed. The records
+// themselves sit in a host shadow of that memory, and each takes CMD_GSIZE bytes of it (nvn.h).
 // A command handle is the guest address of a list's first record.
 #include <stdlib.h>
 #include <string.h>
 
 #include "nvn.h"
 
-#define JUMP_RESERVE (sizeof(CmdRec) + 8)
+#define JUMP_RESERVE (CMD_GSIZE(sizeof(CmdRec)) + 8)  // (guest bytes kept free for the jump into the next chunk)
 
 static NvnCmdBuf *cb_of(uint64_t guest) { return HOST(NvnCmdBuf, guest); }
+
+// The records' shadow (nvn.h): the guest window times CMD_SHADOW_K, reserved once, pages backed on first touch.
+static uint8_t *g_shadow;
+static pthread_once_t g_shadow_once = PTHREAD_ONCE_INIT;
+static void shadow_init(void) {
+    g_shadow = plat_reserve_lazy((GUEST_HI - GUEST_LO) * CMD_SHADOW_K);
+    if (!g_shadow) FATAL("nvn: can't reserve the command records' shadow (%llu GB of address space)\n",
+                         (unsigned long long)((GUEST_HI - GUEST_LO) * CMD_SHADOW_K >> 30));
+    LOG("[nvn] command records: %u host bytes per guest byte\n", CMD_SHADOW_K);
+}
+CmdRec *cmd_rec_at(uint64_t guest) {
+    if (!g_shadow) pthread_once(&g_shadow_once, shadow_init);
+    return (CmdRec *)(g_shadow + (guest - GUEST_LO) * CMD_SHADOW_K);
+}
 
 NVN(nvnCommandBufferInitialize) {
     NvnCmdBuf *cb = calloc(1, sizeof *cb);
@@ -20,7 +35,8 @@ NVN(nvnCommandBufferFinalize) { free(cb_of(A(0))); SET_HOST(A(0), 0); }
 NVN(nvnCommandBufferSetDebugLabel) { (void)c; }
 
 static CmdRec *raw_rec(uint64_t at, uint32_t op, uint32_t size) {
-    CmdRec *r = (CmdRec *)(uintptr_t)at;
+    if (at < GUEST_LO || at + CMD_GSIZE(size) > GUEST_HI) FATAL("nvn: command memory %llx outside the guest window\n", (unsigned long long)at);
+    CmdRec *r = cmd_rec_at(at);
     memset(r, 0, sizeof *r);
     r->op = op;
     r->size = size;
@@ -58,20 +74,20 @@ NVN(nvnCommandBufferSetCommandMemoryCallbackEnabled) { (void)c; }
 // Reserve a record. May call back into the guest for more memory, so callers snapshot their
 // arguments first.
 static CmdRec *rec(Cpu *c, NvnCmdBuf *cb, uint32_t op, uint32_t extra) {
-    uint32_t size = (uint32_t)((sizeof(CmdRec) + extra + 7) & ~7u);
-    for (int tries = 0; !cb->mem || cb->used + size + JUMP_RESERVE > cb->size; tries++) {
-        if (!cb->callback || tries == 2) FATAL("nvn: out of command memory (need %u)\n", size);
+    uint32_t size = (uint32_t)((sizeof(CmdRec) + extra + 7) & ~7u), gsize = CMD_GSIZE(size);
+    for (int tries = 0; !cb->mem || cb->used + gsize + JUMP_RESERVE > cb->size; tries++) {
+        if (!cb->callback || tries == 2) FATAL("nvn: out of command memory (need %u)\n", gsize);
         uint64_t saved[8];
         memcpy(saved, c->x, sizeof saved);
         c->x[0] = cb->guest;
         c->x[1] = 0;  // NVN_COMMAND_BUFFER_MEMORY_EVENT_OUT_OF_COMMAND_MEMORY
-        c->x[2] = size + JUMP_RESERVE;
+        c->x[2] = gsize + JUMP_RESERVE;
         c->x[3] = cb->callback_data;
         guest_call(c, cb->callback);
         memcpy(c->x, saved, sizeof saved);
     }
     CmdRec *r = raw_rec(cb->mem + cb->used, op, size);
-    cb->used += size;
+    cb->used += gsize;
     return r;
 }
 
@@ -119,7 +135,7 @@ NVN(nvnCommandBufferBeginRecording) {
     cb->obj_tag = 0;
     cb->recording = true;
     rec(c, cb, CMD_BARRIER, 0);  // makes sure memory exists; the list starts here
-    cb->start = cb->mem + cb->used - sizeof(CmdRec);
+    cb->start = cb->mem + cb->used - CMD_GSIZE(sizeof(CmdRec));
 }
 NVN(nvnCommandBufferEndRecording) {
     NvnCmdBuf *cb = cb_of(A(0));

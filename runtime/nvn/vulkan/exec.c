@@ -3408,10 +3408,10 @@ static void exec_list(uint64_t handle, int depth) {
     uint64_t p = handle;
     if (depth == 0) st.obj = 0, st.obj_draw = 0;  // (a submitted list starts with no object; its called lists inherit)
     for (int guard = 0; guard < 10000000; guard++) {
-        CmdRec *r = (CmdRec *)(uintptr_t)p;
+        CmdRec *r = cmd_rec_at(p);  // (p is a guest address; the record is in the shadow, nvn.h)
         void *x = r->extra;
         if (r->op < CMD_COUNT) op_counts[r->op]++;
-        if (ip_replaying && ip_skip_op(r->op)) { p += r->size; continue; }
+        if (ip_replaying && ip_skip_op(r->op)) { p += CMD_GSIZE(r->size); continue; }
         switch (r->op) {
         case CMD_END: return;
         case CMD_OBJECT: st.obj = r->x[0]; st.obj_draw = 0; { static int d; if (getenv("LARECOMP_OBJDBG") && vk_frame_counter() == 1450 && d++ < 80) LOG("[objdbg] depth %d object %llx\n", depth,(unsigned long long)r->x[0]); } break;
@@ -3596,7 +3596,7 @@ static void exec_list(uint64_t handle, int depth) {
             break;
         default: break;
         }
-        p += r->size;
+        p += CMD_GSIZE(r->size);
     }
 }
 
@@ -3805,7 +3805,8 @@ static const void *ip_cbuf(int stage, int k, uint64_t addr, uint32_t size) {
 static uint64_t ip_list_hash(uint64_t handle, int depth) {
     uint64_t h = 0xcbf29ce484222325ull, p = handle;
     for (int guard = 0; guard < 10000000; guard++) {
-        const CmdRec *r = (const CmdRec *)(uintptr_t)p;
+        if (p < GUEST_LO || p >= GUEST_HI) return 0;
+        const CmdRec *r = cmd_rec_at(p);
         if (r->op >= CMD_COUNT || r->size < sizeof(CmdRec) || r->size > (1u << 20)) return 0;
         const uint64_t *w = (const uint64_t *)r;
         for (uint32_t i = 0; i < r->size / 8; i++) h = ip_mix(h, w[i]);
@@ -3815,7 +3816,7 @@ static uint64_t ip_list_hash(uint64_t handle, int depth) {
             const uint64_t *hs = (const uint64_t *)r->extra;
             for (uint64_t i = 0; i < r->x[0] && depth < 8; i++) h = ip_mix(h, ip_list_hash(hs[i], depth + 1));
         }
-        p += r->size;
+        p += CMD_GSIZE(r->size);
     }
     return 0;
 }

@@ -90,8 +90,13 @@ resolvidas por nome em execução.
 3. Stubs que apareceram e não atrapalharam até aqui: `pl:u` cmd 0 (o stub genérico), `ITimeZoneService` cmd 4
    chamado em loop.
 
-Ainda não testado: passar da abertura (entrada pelo controle), tela de título, jogo novo, áudio (não conferido),
-save.
+4. **Jogado à mão** (sessão com log ao vivo): abertura, criação do personagem, casa em Postwick, Wedgehurst e a
+   chegada do Leon. **Segundo crash** na cena dos iniciais: o pool de memória de comandos do jogo esgotou, porque o
+   runtime gravava 80 bytes por comando NVN (HISTORICO, item 62). Corrigido com a sombra dos registros; depois disso,
+   jogado até a apresentação dos iniciais sem crash. O save do jogo (`save-sword/`) funciona: o jogo voltou do ponto
+   salvo.
+
+Ainda não testado: escolher o inicial e a primeira batalha, áudio (não conferido), o resto da história.
 
 ## O que isso indica para o port
 

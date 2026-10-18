@@ -23,6 +23,9 @@ bool plat_reserve_guest(uint64_t lo, uint64_t hi);
 void plat_commit(uint64_t addr, uint64_t size);
 // In-place reboot: every page of [lo, hi) back to zero (and unbacked), the window still claimed.
 bool plat_reset_guest(uint64_t lo, uint64_t hi);
+// A large host-only region, readable/writable, its pages backed (zeroed) on first touch: NULL if it can't be had.
+// One per process (the NVN command records' shadow, runtime/nvn/cmdbuf.c).
+void *plat_reserve_lazy(uint64_t size);
 enum { PLAT_PROT_NONE = 0, PLAT_PROT_READ = 1, PLAT_PROT_RW = 3 };
 int plat_protect(uint64_t addr, uint64_t size, int prot);  // 0 on success
 #define PLAT_PAGE 0x4000ull  // largest page size we deal with (macOS 16K; multiple of Windows' 4K)

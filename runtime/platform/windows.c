@@ -17,12 +17,17 @@
 // below, so the window behaves like macOS's all-RW reservation. The OS itself (ReadFile into a guest buffer)
 // does not fault: such buffers must be inside committed regions.
 static uint64_t g_lo, g_hi;
+static uint64_t g_lazy_lo, g_lazy_hi;  // plat_reserve_lazy's region, committed the same way
 #define COMMIT_CHUNK 0x10000ull
 
 static bool lazy_commit(uint64_t a) {
-    if (a < g_lo || a >= g_hi) return false;
+    if ((a < g_lo || a >= g_hi) && (a < g_lazy_lo || a >= g_lazy_hi)) return false;
     MEMORY_BASIC_INFORMATION mi;
-    if (!VirtualQuery((void *)(uintptr_t)a, &mi, sizeof mi) || mi.State != MEM_RESERVE) return false;
+    if (!VirtualQuery((void *)(uintptr_t)a, &mi, sizeof mi)) return false;
+    // Another thread committed it between our fault and this check (two threads touching one chunk, common in the
+    // command records' shadow): just retry the access. Pages protected on purpose (plat_protect) still fault.
+    if (mi.State == MEM_COMMIT) return mi.Protect == PAGE_READWRITE;
+    if (mi.State != MEM_RESERVE) return false;
     uint64_t base = a & ~(COMMIT_CHUNK - 1);
     return VirtualAlloc((void *)(uintptr_t)base, COMMIT_CHUNK, MEM_COMMIT, PAGE_READWRITE) != NULL;
 }
@@ -33,7 +38,7 @@ static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
     EXCEPTION_RECORD *er = ep->ExceptionRecord;
     if (er->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || er->NumberParameters < 2) return EXCEPTION_CONTINUE_SEARCH;
     uint64_t fa = er->ExceptionInformation[1];
-    if (lazy_commit(fa)) return EXCEPTION_CONTINUE_EXECUTION;
+    if (er->ExceptionInformation[0] != 8 && lazy_commit(fa)) return EXCEPTION_CONTINUE_EXECUTION;  // (8: DEP, not ours)
     if (g_report_crashes && rt_fault_watch(fa, ep->ContextRecord->Rip)) return EXCEPTION_CONTINUE_EXECUTION;
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -45,6 +50,16 @@ bool plat_reserve_guest(uint64_t lo, uint64_t hi) {
     g_hi = hi;
     AddVectoredExceptionHandler(1, vectored_handler);
     return true;
+}
+
+void *plat_reserve_lazy(uint64_t size) {
+    if (g_lazy_hi) return NULL;
+    void *p = VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_READWRITE);
+    if (!p) return NULL;
+    g_lazy_lo = (uint64_t)(uintptr_t)p;
+    g_lazy_hi = g_lazy_lo + size;
+    AddVectoredExceptionHandler(1, vectored_handler);  // (also installed by plat_reserve_guest; a second entry is harmless)
+    return p;
 }
 
 // Decommit everything: the range stays reserved, and pages come back zeroed when committed again (lazily).

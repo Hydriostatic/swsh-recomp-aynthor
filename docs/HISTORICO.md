@@ -221,6 +221,17 @@ comportamento é o do Switch.
 
 ---
 
+## Pokémon Sword (fork swsh-recomp, 18/10/2026)
+
+Diagnóstico dos módulos e da cobertura: [DIAGNOSTICO-SWSH.md](DIAGNOSTICO-SWSH.md).
+
+| # | Sintoma | Diagnóstico | Causa | Correção | Arquivo |
+|---|---|---|---|---|---|
+| 61 | Primeiro boot do Sword 1.0.0: acesso ao endereço 0 logo no começo, antes de qualquer imagem | Log: a última chamada era `friend:u` cmd 0 respondida pelo stub genérico; crash no `sdk` chamado pelo `main` | `friend:u` não tinha implementação; o stub respondia "ok" sem devolver o objeto `IFriendService` de `CreateFriendService`, e o jogo usava a sessão nula | `friend:u` devolve `IFriendService` e `INotificationService`, respondendo como console offline sem amigos (listas vazias, eventos que não disparam). Depois disso a abertura roda a 30 fps | `runtime/services/offline.c` |
+| 62 | Sword: crash (acesso a `0x30`) na cena em que o Leon apresenta os iniciais, a mais pesada até ali (~45 mil draws/s), depois de ~10 min de jogo | Backtrace: uma função NVN do runtime chamou de volta o callback de memória de comandos do jogo, e o callback caiu. Disassembly: `f_70005f4a00` (bloco livre do pool de memória de comandos do jogo) devolveu nulo, o jogo chamou o seu abort (`f_70005f5780`, que no console não volta; aqui voltou) e leu `[0 + 0x30]` | O runtime gravava cada comando como um `CmdRec` de 80 bytes fixos na memória de comandos do jogo, onde o NVN real gasta 8-16 bytes por comando: o pool do jogo, dimensionado para o real, esgotou | Os registros passam para uma sombra no host com mapeamento linear da janela do guest (`cmd_rec_at`, 8 bytes de host por byte do guest): cada comando ocupa `CMD_GSIZE` (16 bytes para um registro simples) da memória do jogo. Handles, `JUMP` e listas de `CALL` continuam endereços do guest; o reaproveitamento da memória pelo jogo sobrescreve a mesma sombra, sem liberação a controlar. A sombra (100 GB de espaço de endereços reservado) é comitada na primeira escrita (`plat_reserve_lazy`). No caminho apareceu uma corrida antiga do commit preguiçoso: duas threads no mesmo bloco de 64 KB, a segunda via `MEM_COMMIT` e o handler respondia "não é comigo" (crash em 11 s num dos testes); agora uma página já comitada RW repete o acesso (falhas de DEP ficam de fora). Verificado: 2 rodadas automáticas de 100 s na cena de Wedgehurst (84 mil draws/s) sem crash, e jogado até a apresentação dos iniciais sem crash | `runtime/nvn/cmdbuf.c`, `nvn.h`, `vulkan/exec.c`, `runtime/platform.h`, `platform/windows.c`, `platform/linux.c` |
+
+---
+
 ## Lições aprendidas
 - **Medir antes de chutar.** Os maiores avanços vieram de instrumentação: dump de threads, motivo dos draws
   pulados, gravação do áudio, log de quem chama cada função.

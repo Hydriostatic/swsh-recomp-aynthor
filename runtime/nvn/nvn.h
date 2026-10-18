@@ -91,7 +91,7 @@ typedef struct NvnSync {
 typedef struct {
     uint64_t mem;    // current command memory chunk (guest address)
     uint64_t size;   // chunk size
-    uint64_t used;   // bytes used in chunk
+    uint64_t used;   // bytes used in chunk (guest bytes: CMD_GSIZE per record)
     uint64_t start;  // first record of the list being recorded
     uint64_t callback, callback_data;
     bool recording;
@@ -101,11 +101,20 @@ typedef struct {
 
 // One recorded command: header, the call's integer and float arguments, then copied data.
 typedef struct {
-    uint32_t op, size;  // size includes the header, multiple of 8
+    uint32_t op, size;  // size includes the header, multiple of 8 (host bytes, in the shadow)
     uint64_t x[7];      // x1..x7 of the call
     float f[4];         // s0..s3 of the call
     uint8_t extra[];
 } CmdRec;
+
+// The records live in a host shadow of the guest window, CMD_SHADOW_K host bytes per guest byte (cmdbuf.c): a record
+// of `size` bytes takes only CMD_GSIZE(size) bytes of the game's command memory - about what real NVN commands take.
+// A full CmdRec is 80 bytes; Sword's command memory pool, sized for the real ones, ran out at its starter scene.
+// Handles, JUMP targets and CALL lists stay guest addresses: read a record with cmd_rec_at, step by CMD_GSIZE.
+// The shadow follows the guest memory's life by construction: a reused chunk overwrites the same shadow bytes.
+#define CMD_SHADOW_K 8
+#define CMD_GSIZE(size) ((((uint32_t)(size) + CMD_SHADOW_K - 1) / CMD_SHADOW_K + 7) & ~7u)
+CmdRec *cmd_rec_at(uint64_t guest);
 
 enum {
     CMD_END = 0, CMD_JUMP, CMD_CALL,
