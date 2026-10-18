@@ -365,19 +365,54 @@ static NvnTexture *texture_from_builder(uint64_t b) {
     return t;
 }
 
+// A texture-pool slot keeps the host object it was registered with. The game finalizes a texture and initializes it again
+// in the same NVNtexture object (a bigger version streamed in) without registering the slot again: on the console the
+// slot's descriptor still describes the texture's memory; here the slot kept the freed host object and, whenever malloc
+// gave that memory to another texture, showed that one (the world after a capture: fences, signs and ferns with other
+// textures until the area changed, docs/HISTORICO.md 60). Finalize clears those slots and initializing the same object
+// puts the new host object back. LARECOMP_POOL_FIX=0: as before, only counted (research).
+extern NvnDescPool *g_texture_pools[64];
+static uint64_t g_pool_dangling, g_pool_reattached, g_pool_mismatch;
+static int pool_fix(void) {
+    static int f = -1;
+    if (f < 0) f = getenv("LARECOMP_POOL_FIX") ? atoi(getenv("LARECOMP_POOL_FIX")) : 1;
+    return f;
+}
+static void pool_note(const char *what, uint64_t n) { if (!(n & (n - 1))) LOG("[nvn] texture pool: %s %llu\n", what, (unsigned long long)n); }
+static void pool_forget(NvnTexture *t) {
+    for (int p = 0; p < 64 && g_texture_pools[p]; p++) {
+        NvnTexEntry *e = g_texture_pools[p]->entries;
+        for (int i = 0; i < g_texture_pools[p]->count; i++)
+            if (e[i].tex == t) {
+                pool_note("slots left on a finalized texture", ++g_pool_dangling);
+                if (pool_fix()) e[i].tex = NULL;
+            }
+    }
+}
+static void pool_reattach(uint64_t guest, NvnTexture *t) {
+    for (int p = 0; p < 64 && g_texture_pools[p]; p++) {
+        NvnTexEntry *e = g_texture_pools[p]->entries;
+        for (int i = 0; i < g_texture_pools[p]->count; i++)
+            if (e[i].guest == guest && e[i].tex != t) {
+                if (!e[i].tex) { e[i].tex = t; pool_note("slots given the texture initialized again", ++g_pool_reattached); }
+                else if (!pool_fix()) pool_note("slots on another object than the texture initialized again", ++g_pool_mismatch);
+            }
+    }
+}
 NVN(nvnTextureInitialize) {
     NvnTexture *t = texture_from_builder(A(1));
     if (t->flags & 2)
         LOG("[nvn] video texture %p: %ux%u fmt %#x flags %#x target %u addr %llx stride %llu\n", t, t->width, t->height,
             t->format, t->flags, t->target, t->addr, t->stride);
     SET_HOST(A(0), t);
+    pool_reattach(A(0), t);
     RET(1);
 }
 static void texture_destroy_on_render_thread(void *t) { backend_texture_destroyed(t); }
 NVN(nvnTextureFinalize) {
     g_nvn_destroyed++;
     NvnTexture *t = HOST(NvnTexture, A(0));
-    if (t) { rt_call(texture_destroy_on_render_thread, t); free(t); }
+    if (t) { rt_call(texture_destroy_on_render_thread, t); pool_forget(t); free(t); }
     SET_HOST(A(0), 0);
 }
 NVN(nvnTextureSetDebugLabel) {
@@ -538,6 +573,7 @@ static void register_texture(Cpu *c) {
     if (id < 0 || id >= d->count) return;
     NvnTexEntry *e = &((NvnTexEntry *)d->entries)[id];
     e->tex = HOST(NvnTexture, A(2));
+    e->guest = A(2);
     e->has_view = A(3) != 0;
     if (e->has_view) memcpy(&e->view, AP(3), sizeof e->view);
 }

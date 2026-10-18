@@ -429,6 +429,12 @@ void input_frame(uint64_t frame) {
     int32_t lx = 0, ly = 0, rx = 0, ry = 0;
     static char buf[16384];  // (long scripted sessions: the perf walk is ~4 KB)
     snprintf(buf, sizeof buf, "%s", spec);
+    // LARECOMP_INPUT_LOOP=<start>:<period>: from frame <start> on, the script's entries in [start, start + period) repeat
+    // every period frames (long unattended sessions: tools/capture_loop.py walks through the grass and captures for hours)
+    static long loop_start = -1, loop_period;
+    if (loop_start < 0) { loop_start = 0; const char *e = getenv("LARECOMP_INPUT_LOOP"); if (e) sscanf(e, "%ld:%ld", &loop_start, &loop_period); }
+    uint64_t real_frame = frame;
+    if (loop_period > 0 && frame >= (uint64_t)loop_start) frame = (uint64_t)loop_start + (frame - (uint64_t)loop_start) % (uint64_t)loop_period;
     for (char *tok = strtok(buf, ","); tok; tok = strtok(NULL, ",")) {
         unsigned long start = 0, len = 10;
         char name[32] = "";
@@ -447,6 +453,20 @@ void input_frame(uint64_t frame) {
             lx = (int32_t)lround(cos(r) * 32767), ly = (int32_t)lround(sin(r) * 32767);
         }
         for (int i = 0; i < 16; i++) if (!strcmp(name, names[i])) b |= 1ull << i;
+    }
+    if (loop_period > 0) {  // (the loop holds still for 300 frames once the world is back after a battle / capture: the
+        // capture loop compares that view with the one before the encounter)
+        extern long fps60_world_back(void);
+        long wb = fps60_world_back();
+        if (wb >= 0 && (long)real_frame >= wb && (long)real_frame - wb < 300) b = 0, lx = ly = rx = ry = 0;
+        extern bool fps60_in_scene(void);  // (inside the encounter: run away)
+        if (fps60_in_scene()) {  // the encounter menu (Get ready / Bag / Help / Run away): B back to it, down three, A;
+            // "give up catching?" may start on No: up, A
+            uint64_t ph = real_frame % 80;
+            lx = ly = rx = ry = 0;
+            b = ph < 6 ? 1ull << 1 : (ph >= 12 && ph < 18) || (ph >= 22 && ph < 28) || (ph >= 32 && ph < 38) ? 1ull << 15 :
+                (ph >= 42 && ph < 48) || (ph >= 68 && ph < 74) ? 1ull : ph >= 56 && ph < 62 ? 1ull << 13 : 0;
+        }
     }
     script_buttons = b;
     script_lx = lx;

@@ -52,6 +52,7 @@ typedef struct {
     NvnTexture *tex;
     NvnTextureView view;
     bool has_view;
+    uint64_t guest;  // the game's NVNtexture object it was registered with (objects.c: a finalized texture leaves the slot)
 } NvnTexEntry;
 
 typedef struct NvnDescPool {

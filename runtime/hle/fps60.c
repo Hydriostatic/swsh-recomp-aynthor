@@ -62,8 +62,14 @@ int rt_scene_tick(void) {
     return r;
 }
 
+// Every battle / capture and the world's return after it, in the log ("[scene]"; tools/capture_loop.py reads them) and for
+// the scripted input (LARECOMP_INPUT_LOOP holds still for a while after the world comes back: input.c)
+static bool g_mark_scene;
+static long g_world_back = -1;
+long fps60_world_back(void) { return g_world_back; } bool fps60_in_scene(void) { return g_mark_scene; }
 static int scene_hook(Cpu *c, uint64_t addr) {
     scene_start_hook(c, addr);  // (one hook per address: this one also marks the start for LARECOMP_SHOT_REL)
+    if (!g_mark_scene) { g_mark_scene = true; LOG("[scene] start %llu (f_%llx)\n", (unsigned long long)renderer_game_frame(), (unsigned long long)addr); }
     g_scene = true;
     if (g_all60) return 0;  // LARECOMP_FPS60=2: battles and captures at 60 too (their counters halved)
     g_special = true;
@@ -82,6 +88,7 @@ static bool g_field_ran;  // the world's update ran since the last present
 static bool g_played;     // the world has updated at least once (before: the controller screen, the title, loading)
 static int field_hook(Cpu *c, uint64_t addr) {
     g_n_world++;
+    if (g_mark_scene) { g_mark_scene = false; g_world_back = (long)renderer_game_frame(); LOG("[scene] world again %ld\n", g_world_back); }
     g_field_ran = true;
     g_played = true;
     g_special = false;
@@ -206,7 +213,7 @@ void fps60_configure(void) {
     if (!getenv("LARECOMP_FPS60")) g_on = g_settings.fps == 60, g_all60 = false;
     extern uint64_t rt_addr(uint64_t eevee);  // (runtime/fnhook.c: 0 in a build it doesn't know)
     if (!rt_addr(FIELD_UPDATE)) g_on = g_all60 = false;
-    if ((g_on || g_stats) && !hooked) {
+    if ((g_on || g_stats || getenv("LARECOMP_INPUT_LOOP")) && !hooked) {
         hooked = true;
         rt_register_fnhook(FIELD_UPDATE, field_hook);
         rt_register_fnhook(ENCOUNTER_SCENE, scene_hook);

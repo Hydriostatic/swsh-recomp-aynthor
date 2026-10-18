@@ -2,16 +2,16 @@
 
 ## 0.3.1 (2026-10-18)
 
-- **Fixes a broken map after a capture (found playing 0.3.0 with 60 fps on).** After entering and leaving a capture, the world
-  could look wrong until you changed area: fences, signs and ferns flat and dark, grey patches on the ground. The cause is
-  **not found yet**; it showed up with either new 0.3.0 option on (the render thread, or reading models from video memory)
-  and not in the runs with both off (not a proof it can never happen with both off: a handful of encounters each). So the
-  two options are **off by default again**: the game runs as in 0.2.2, plus the mutex change and the fixes of 0.3.0.
-  The 0.3.0 measurements (about 45% more uncapped frames per second with both on) stay true for the Pewter City route,
-  but that route does not include a capture.
-- To try them anyway: `exp_render_thread = 1` and `exp_vertex_vram = 1` in `larecomp.ini` (the keys of 0.3.0 are
-  ignored on purpose, so an ini saved by 0.3.0 does not keep them on).
-- Upgrading from 0.3.0 or 0.2.x: unzip over your install.
+- **Fixes the world breaking after a capture** (found playing 0.3.0 with 60 fps on): after entering and leaving a
+  capture, fences, signs and ferns could show flat or dark until you changed area. The cause was older than 0.3.0 and
+  only luck kept it hidden: when the game rebuilt a texture in place (it streams them), the texture slot the game had
+  registered kept pointing at the freed copy, so what it showed depended on what the memory allocator put there next.
+  The render thread and the video-memory models of 0.3.0 changed the allocation pattern, which made it show. Slots
+  now follow the texture when the game rebuilds it.
+- Tested here with a new unattended loop that walks in the grass of Viridian Forest and runs from each encounter
+  (Eevee and Pikachu 1.0.0, both 0.3.0 options on): the world looked the same before and after every encounter. The
+  0.3.0 performance options stay **on by default**.
+- Upgrading: unzip over your install (no new setup).
 
 ## 0.3.0 (2026-10-18)
 
