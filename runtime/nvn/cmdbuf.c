@@ -325,7 +325,8 @@ NVN(nvnCommandBufferSetRasterizerDiscard) { (void)c; }
 NVN(nvnCommandBufferSetConservativeRasterEnable) { (void)c; }
 NVN(nvnCommandBufferSetConservativeRasterDilate) { (void)c; }
 NVN(nvnCommandBufferSetSubpixelPrecisionBias) { (void)c; }
-NVN(nvnCommandBufferSetViewportSwizzles) { (void)c; }
+// (Sword flips the blit that keeps the scene for its save / loading screens with NEGATIVE_Y: docs/HISTORICO.md item 66)
+NVN(nvnCommandBufferSetViewportSwizzles) { record_copy(c, CMD_SET_VIEWPORT_SWIZZLES, 3, (uint32_t)A(2) * 16); }
 NVN(nvnCommandBufferSetStencilCullCriteria) { (void)c; }
 NVN(nvnCommandBufferSetColorReductionEnable) { (void)c; }
 NVN(nvnCommandBufferSetColorReductionThresholds) { (void)c; }

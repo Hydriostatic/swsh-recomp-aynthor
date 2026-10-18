@@ -18,6 +18,7 @@
 #include "../../settings.h"
 
 static uint64_t g_draws_total;  // (never reset: LARECOMP_COUNTER_LOG)
+static void watch_tex(NvnTexture *t, const char *what, const NvnTexture *from);  // (LARECOMP_WATCH_TEX, below)
 static uint64_t stat_draws, stat_skipped, stat_passes, stat_dispatches, stat_wait_ns, stat_flushes, stat_feedback_copies;
 // Skipped draws by reason (logged with the stats): 0 no program bound, 1 program still compiling, 2 program failed,
 // 3 no program object, 4 primitive mode, 5 pipeline still building, 6 pipeline failed.
@@ -666,6 +667,7 @@ static struct {
     uint64_t tex[6][32], img[6][8];
     NvnDescPool *tpool, *spool;
     float viewport[16][4];
+    int32_t vswz[16][4];  // NVNviewportSwizzle x/y/z/w (0 = not set; 3 = NEGATIVE_Y: the draw comes out upside down)
     int32_t scissor[16][4];
     float depth_range[16][2];
     float blend_color[4];
@@ -903,6 +905,7 @@ static void begin_pass(void) {
         ca[i] = (VkRenderingAttachmentInfo){.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         pass_color[i] = VK_FORMAT_UNDEFINED;
         if (!t) continue;
+        watch_tex(t, "render target", NULL);
         renderer_mark_gpu_owned(t);
         VkImageView v = vk_view(t, &st.rt.cview[i], st.rt.has_cview[i], true, TEXTYPE_2D);
         TexBackend *b = t->backend;
@@ -1006,11 +1009,13 @@ static void apply_scissor(void) {
     vkCmdSetScissor(vk_cmd(), 0, 1, &r);
 }
 
-// Metal convention (y up in NDC, origin top-left) through a negative-height viewport.
-static void set_viewport(float x, float y, float w, float h, float zn, float zf) {
+// Metal convention (y up in NDC, origin top-left) through a negative-height viewport. neg_y: the game's NEGATIVE_Y
+// viewport swizzle (y = -y after the vertex shader), one more flip.
+static void set_viewport(float x, float y, float w, float h, float zn, float zf, bool neg_y) {
     if (w <= 0) w = 1;
     if (h == 0) h = 1;
-    VkViewport vp = {x, y + h, w, -h, fminf(fmaxf(zn, 0), 1), fminf(fmaxf(zf, 0), 1)};
+    VkViewport vp = neg_y ? (VkViewport){x, y, w, h, fminf(fmaxf(zn, 0), 1), fminf(fmaxf(zf, 0), 1)}
+                          : (VkViewport){x, y + h, w, -h, fminf(fmaxf(zn, 0), 1), fminf(fmaxf(zf, 0), 1)};
     vkCmdSetViewport(vk_cmd(), 0, 1, &vp);
 }
 
@@ -2329,6 +2334,26 @@ static void draw(CmdRec *r, bool indexed) {
     PROF_T0();
     draw_(r, indexed);
     PROF_ADD(prof_draw);
+    // LARECOMP_DEBUG_PASS_DRAWS=<pass number> (with F9 / LARECOMP_DEBUG_FRAME): in the debug frame, that pass's colour
+    // target after each of its draws -> build/draw_<frame>_<n>.png, with the draw's programs logged (which draw paints
+    // what: docs/DEPURACAO.md). The pass is ended and begun again (loading what is there) around each save.
+    static int want = -2;
+    if (want == -2) want = getenv("LARECOMP_DEBUG_PASS_DRAWS") ? atoi(getenv("LARECOMP_DEBUG_PASS_DRAWS")) : -1;
+    if (want < 0 || !g_debug_frame || debug_pass_no != want || !in_pass || !st.rt.ncolor || !st.rt.color[0] ||
+        !st.rt.color[0]->backend)
+        return;
+    static uint64_t frame = ~0ull;
+    static int n;
+    if (renderer_present_count() != frame) { frame = renderer_present_count(); n = 0; }
+    vkCmdEndRendering(vk_cmd());
+    in_pass = false;
+    char path[256];
+    snprintf(path, sizeof path, "build/draw_%llu_%03d.png", (unsigned long long)frame, n);
+    LOG("[drawdump] %s: vs %llx fs %llx (fs hash %016llx)\n", path, st.program ? (unsigned long long)st.program->stages[0].code_addr : 0ull,
+        st.program ? (unsigned long long)st.program->stages[1].code_addr : 0ull, (unsigned long long)g_cur_fs_hash);
+    renderer_save_texture_tex(st.rt.color[0]->backend, path);
+    n++;
+    st.rt_dirty = true;  // (begin_pass again before the next draw; the target is loaded, not cleared)
 }
 // A draw whose program or pipeline is still being built waits for it, up to a budget per frame, instead of being
 // skipped (objects popping in on entering an area). At 30 fps a frame has ~27 ms to spare (uncapped, the overworld
@@ -2631,7 +2656,10 @@ static void draw_(CmdRec *r, bool indexed) {
     }
     {
         float vx = vp[0] * vp_sx + vp_ox, vw = vp[2] * vp_sx;
-        set_viewport(vx, vp[1] * vp_sy + vp_oy, vw, vp[3] * vp_sy, zn, zf);
+        bool neg_y = st.vswz[0][1] == 3;  // NVN_VIEWPORT_SWIZZLE_NEGATIVE_Y
+        static bool told;
+        if (neg_y && !told) { told = true; LOG("[nvn] a draw with the NEGATIVE_Y viewport swizzle (flipped)\n"); }
+        set_viewport(vx, vp[1] * vp_sy + vp_oy, vw, vp[3] * vp_sy, zn, zf, neg_y);
         if (g_debug_frame) {
             VkRect2D sr = scissor_rect();
             LOG("[draw]   vp %.2f %.2f %.2f %.2f (fs hash %016llx) scissor %d %d %u %u | guest sc %d %d %d %d | pass %ux%u s %.4f %.4f\n",
@@ -2951,6 +2979,7 @@ static void copy_buffer_to_texture(uint64_t src, const TexRefRec *dst) {
     extern void vk_tex_unscale(NvnTexture *t);
     vk_tex_unscale(t);  // the copied data is full size: no output-resolution scaling for this texture
     TexBackend *b = vk_tex(t, false);  // prior CPU contents uploaded first
+    watch_tex(t, "buffer upload", NULL);
     renderer_mark_gpu_owned(t);
     if (b->aspect == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) return;
     if (b->astc_bw) {  // (blocks would need the CPU decode: not seen in the game yet)
@@ -3027,10 +3056,25 @@ static void copy_texture_to_buffer(const TexRefRec *src, uint64_t dst) {
     if (small_mem) vmaDestroyImage(g_vk.vma, srcimg, small_mem);
 }
 
+// LARECOMP_WATCH_TEX=<guest addr, hex>: every write to that texture (render target, copy destination, buffer upload)
+// logged with the frame - who fills a texture the debug frame only shows being read (docs/DEPURACAO.md).
+static void watch_tex(NvnTexture *t, const char *what, const NvnTexture *from) {
+    static uint64_t addr = ~0ull;
+    if (addr == ~0ull) { const char *e = getenv("LARECOMP_WATCH_TEX"); addr = e ? strtoull(e, NULL, 16) : 0; }
+    if (!addr || !t || t->addr != addr) return;
+    extern uint64_t vk_frame_counter(void);
+    const NvnProgram *p = st.program;
+    LOG("[watch] frame %llu: %s %ux%u f%#x (vs %llx fs %llx, from %ux%u f%#x)\n", (unsigned long long)vk_frame_counter(),
+        what, t->width, t->height, t->format, p ? (unsigned long long)p->stages[0].code_addr : 0ull,
+        p ? (unsigned long long)p->stages[1].code_addr : 0ull, from ? from->width : 0, from ? from->height : 0,
+        from ? from->format : 0);
+}
+
 static void copy_texture(const TexRefRec *src, const TexRefRec *dst, uint64_t flags) {
     snap_reason = "tex2tex"; snapshots_invalidate(NULL);
     NvnTexture *st_ = (NvnTexture *)(uintptr_t)src->tex, *dt = (NvnTexture *)(uintptr_t)dst->tex;
     if (!st_ || !dt) return;
+    watch_tex(dt, "copy destination", st_);
     vk_end_pass();
     if (dl_on == 2) renderer_flush();  // (LARECOMP_VK_DEVLOST_TRACE=2: each copy its own submission, waited on)
     gp_mark(vk_cmd(), "copy texture %ux%u -> %ux%u", st_->width, st_->height, dt->width, dt->height);
@@ -3507,6 +3551,16 @@ static void exec_list(uint64_t handle, int depth) {
             break;
         case CMD_SET_SCISSORS:
             for (uint64_t i = 0; i < r->x[1] && r->x[0] + i < 16; i++) memcpy(st.scissor[r->x[0] + i], (uint8_t *)x + i * 16, 16);
+            break;
+        case CMD_SET_VIEWPORT_SWIZZLES:
+            for (uint64_t i = 0; i < r->x[1] && r->x[0] + i < 16; i++) {
+                memcpy(st.vswz[r->x[0] + i], (uint8_t *)x + i * 16, 16);
+                const int32_t *s = st.vswz[r->x[0] + i];
+                static int logged;  // (only Y flips are done: X / Z / W swizzles are logged)
+                if ((s[0] != 0 || (s[1] != 2 && s[1] != 3) || s[2] != 4 || s[3] != 6) && logged++ < 4)
+                    LOG("[nvn] viewport %llu swizzle %d %d %d %d (only NEGATIVE_Y is applied)\n",
+                        (unsigned long long)(r->x[0] + i), s[0], s[1], s[2], s[3]);
+            }
             break;
         case CMD_SET_DEPTH_RANGES:
             for (uint64_t i = 0; i < r->x[1] && r->x[0] + i < 16; i++) memcpy(st.depth_range[r->x[0] + i], (uint8_t *)x + i * 8, 8);

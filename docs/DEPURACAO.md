@@ -75,6 +75,9 @@ Tudo o que foi usado para diagnosticar o port. As variáveis de ambiente valem p
 | `LARECOMP_VK_DEVLOST_TRACE=1` (+ `LARECOMP_SYNC_SUBMIT=1`) | últimas operações da GPU antes de um device lost |
 | `LARECOMP_SAVE_MSL=1` | salva cada shader traduzido em `build/glsl/<addr>_{vs,fs}.glsl` |
 | `LARECOMP_DEBUG_FRAME=<frame>` | lista todos os draws daquele quadro (programa, formatos de atributo, render targets e, por textura: tamanho, formato, flags, altura de bloco, endereço) |
+| `LARECOMP_DEBUG_PASS_DRAWS=<nº do passe>` | com o quadro de depuração (F9 / `LARECOMP_DEBUG_FRAME`): o alvo daquele passe depois de cada draw, em `build/draw_<quadro>_<n>.png`, com os programas de cada draw no log (`[drawdump]`). Cada draw vira um passe salvo e esperado, o que esconde problemas de sincronização (Sword: o brilho estourado some assim) |
+| `LARECOMP_WATCH_TEX=<endereço da textura, hex>` | cada escrita naquela textura (alvo de render, destino de cópia, upload de buffer) com o quadro e os programas ligados (`[watch]`): quem preenche uma textura que o quadro de depuração só mostra sendo lida |
+| `LARECOMP_PRESENT_INTERVAL=<n>` | substitui o intervalo de apresentação que o jogo pede (pesquisa do 60 fps; a opção de verdade é `runtime/hle/swsh60.c`) |
 | `LARECOMP_LOG_SKIN=1` (+ `LARECOMP_DEBUG_VSCB=1`) | detalha draws com esqueleto: vértices, índices/pesos dos ossos, estatística da paleta |
 | `LARECOMP_DUMP_SKIN=<n>` | grava as entradas do n-ésimo draw com esqueleto em `build/skin/` |
 | `LARECOMP_VK_UBO_DIRECT=1` | uniforms lidos direto da memória do jogo na GPU (experimento) |
