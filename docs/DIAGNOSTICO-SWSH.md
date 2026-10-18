@@ -98,6 +98,23 @@ resolvidas por nome em execução.
 
 Ainda não testado: escolher o inicial e a primeira batalha, áudio (não conferido), o resto da história.
 
+## Sword 1.3.2 com o Expansion Pass (18/10/2026)
+
+- **Atualização** (`0100abf008968800`, v1.3.2, NSP com ticket comum): extraída sobre a NCA de programa do cartucho
+  com `hactool --basenca`. O hactool não grava a imagem de um RomFS com patch (BKTR), só os arquivos
+  (`--romfsdir`, 50.494 arquivos, 13 GB); a imagem sai do `tools/romfs_pack.c` (o montador do launcher).
+- **`main` 1.3.2:** build `a3b75bcd3311385a` (o mesmo do mod de 60 fps), imagem 41,5 MB + bss 3,3 MB (cabe), SDK
+  7.7.0. `sdk`, `subsdk0` e `subsdk1` idênticos aos da 1.0.0. Lifter: 109.846 funções, 0 não suportadas.
+- **DLCs** (`...9001` e `...9002`, Expansion Pass): só um `keyfile.dat` cada; as áreas estão na atualização.
+  Montadas como `aoc/<data id>.bin` e servidas pelo `aoc:u` / `OpenDataStorageByDataId` (commit 516a242).
+- **Primeiro boot:** crash do `longjmp` (HISTORICO, item 63). Corrigido: título, save da 1.0.0 carregado e
+  convertido, Armor Pass entregue.
+- **60 fps:** os endereços do mod na 1.3.2 confirmam a leitura da 1.0.0 (intervalo 1 no invólucro do
+  `SetPresentInterval`, entrada de 1/30 s da tabela de durações trocada por 1/60 s): `runtime/hle/swsh60.c`.
+- **Como rodar:** `build/v132/lasrecomp.exe extracted-132` (DLL próprio em `build/v132/`, compilado com
+  `make B=build/v132 GEN=generated-132`). Usar uma pasta de save à parte (`LARECOMP_SAVE_DIR`): a 1.3.2 converte
+  o save que abre, e a 1.0.0 não lê mais o convertido.
+
 ## Bugs gráficos conhecidos (abertos)
 
 Vistos jogando (sessão de 18/10, `build/play5.log`, por volta de t=1100 s / quadro ~32000). As capturas do jogador

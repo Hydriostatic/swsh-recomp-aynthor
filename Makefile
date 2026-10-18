@@ -153,8 +153,11 @@ $(EXE): $(RT_OBJ) $(BACKEND_OBJ) $(UI_OBJ) $(IMGUI_OBJ)
 	mv -f $(dir $@)link/$(notdir $@) $@
 
 # its id file (<library>.id) says what it was built from without loading it (runtime/gamelib.c)
+# (the objects go through a response file: over a thousand of them pass Windows' 32 KB command line, with a longer B;
+# clang then hands lld a temporary file of its own, and MSYS make passes no TEMP / TMP: the build dir instead)
 $(GAMELIB): $(GEN_OBJ) | $(EXE)
-	$(CC) $(GAMELIB_LDFLAGS) -o $@.tmp $^
+	$(file >$@.rsp,$^)
+	TMP=$(B) TEMP=$(B) $(CC) $(GAMELIB_LDFLAGS) -o $@.tmp @$@.rsp
 	mv -f $@.tmp $@
 	echo $(GAMELIB_ID) > $@.id
 
