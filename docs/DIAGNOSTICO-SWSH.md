@@ -41,7 +41,7 @@ Data: 2026-10-18 · Extraído com hactool 1.4.0 + `prod.keys` do console do usu�
 | `subsdk1` (glslc) | 11.613 | **0** | 988 | 440 | 11 s |
 
 100% do código traduzido, conferido também pela ausência no C gerado da marca `rt_udf(...); /* motivo */` que o
-lifter deixa nas instruções não suportadas. C gerado: 678 MB em `generated-x86_64/` (fora do git), contra ~550 MB
+lifter deixa nas instruções não suportadas. C gerado: 678 MB em `generated/` (fora do git), contra ~550 MB
 do Let's Go. O `main` tem 1,7x as funções do Let's Go (105 mil contra 60 mil), então a compilação da DLL deve
 levar proporcionalmente mais.
 
@@ -72,6 +72,26 @@ permissão; o que muda é **quais comandos** o jogo chama, e isso só aparece em
 O resto das bibliotecas `nn::` (os, fs, audio, socket, ldn, bcat, fontll, swkbd, crypto) tem praticamente o mesmo
 conjunto do Let's Go. NVN entra por um único import (o bootstrap), como no Let's Go: as funções `nvn*` são
 resolvidas por nome em execução.
+
+## Primeiro boot (2026-10-18)
+
+`lasgame.dll`: 254 MB, compilado em 18 min com `make -j20` (i5-14600KF), sem nenhum erro. O Makefile usa
+`generated/` no Windows (o `generated-<arch>/` é só do Linux).
+
+1. **Primeiro crash:** acesso ao endereço 0 no `sdk` (`f_70041d6b90`, chamado do `main`) logo depois de
+   `friend:u` cmd 0. O serviço não tinha implementação, e o stub genérico respondia "ok" sem devolver o objeto
+   `IFriendService`, então o jogo usou uma sessão nula. **Correção:** `friend:u` em `runtime/services/offline.c`
+   (`CreateFriendService` / `CreateNotificationService` devolvem os objetos; listas vazias, eventos que não
+   disparam: um console offline sem amigos).
+2. **Depois disso:** carrega e roda a **abertura** (o discurso do Rose no estádio de Wyndon, com legendas) a
+   **30 fps estáveis**, ~16 mil draws/s, nenhum shader com falha de tradução (`failed 0`, `pipe-failed 0`) nos
+   100 s testados. Os quadros salvos (`LARECOMP_SHOT_AT`) mostram estádio, torcida, iluminação, sombras e os
+   modelos do Rose e do Cufant corretos.
+3. Stubs que apareceram e não atrapalharam até aqui: `pl:u` cmd 0 (o stub genérico), `ITimeZoneService` cmd 4
+   chamado em loop.
+
+Ainda não testado: passar da abertura (entrada pelo controle), tela de título, jogo novo, áudio (não conferido),
+save.
 
 ## O que isso indica para o port
 

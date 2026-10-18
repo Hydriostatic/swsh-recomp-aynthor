@@ -1,5 +1,5 @@
-// Let's Go: system services for features this port runs without - Bluetooth (Poke Ball Plus, Pokemon GO link) and
-// the hardware random generator. Each answers the way a console with nothing paired / nothing nearby would, and
+// System services for features this port runs without - Bluetooth (Let's Go: Poke Ball Plus, Pokemon GO link), the
+// friend list (Sword/Shield) and the hardware random generator. Each answers the way a console with nothing paired / nothing nearby would, and
 // logs what it was asked, so a feature that needs more shows up in the log.
 #include <string.h>
 
@@ -52,6 +52,53 @@ SERVICE("bt", bt) {
         LOG("[bt] cmd %u (ok)\n", req->cmd);
         resp_size(resp, 0x10);
     }
+}
+
+// ------------------------------------------------------------------ friend:u (nn::friends, Sword/Shield)
+// IServiceCreator -> IFriendService / INotificationService (switchbrew "Friend services"), answered as an offline
+// console with no friends: the lists are empty and the events never fire. Without the objects the game used a null
+// session right after CreateFriendService (Sword's first boot).
+static void friend_service(Service *s, IpcReq *req, IpcResp *resp) {
+    (void)s;
+    switch (req->cmd) {
+    case 0:  // GetCompletionEvent
+        resp->copy_handles[resp->ncopy++] = new_event_handle();
+        break;
+    case 10100:  // GetFriendListIds
+    case 10101:  // GetFriendList
+    case 20100:  // GetFriendCount
+    case 20101:  // GetNewlyFriendCount
+    case 20400:  // GetBlockedUserListIds
+    case 20700:  // GetPlayHistoryList
+    case 21000:  // GetReceivedFriendRequestCount
+        OUT(int32_t, 0) = 0;
+        resp_size(resp, 4);
+        break;
+    default:  // (no output: the btm:u lesson, a made-up reply can be worse than none)
+        LOG("[friend] IFriendService cmd %u (ok, offline)\n", req->cmd);
+    }
+}
+
+static void friend_notification(Service *s, IpcReq *req, IpcResp *resp) {
+    (void)s;
+    if (req->cmd == 0) {  // GetEvent
+        resp->copy_handles[resp->ncopy++] = new_event_handle();
+        return;
+    }
+    LOG("[friend] INotificationService cmd %u (ok, nothing pending)\n", req->cmd);
+}
+
+SERVICE("friend:u", friend_u) {
+    (void)s;
+    if (req->cmd == 0) {  // CreateFriendService
+        ipc_return_object(resp, service_new("IFriendService", friend_service, NULL));
+        return;
+    }
+    if (req->cmd == 1) {  // CreateNotificationService
+        ipc_return_object(resp, service_new("INotificationService", friend_notification, NULL));
+        return;
+    }
+    LOG("[friend] friend:u cmd %u (ok)\n", req->cmd);
 }
 
 // ------------------------------------------------------------------ csrng (spl random bytes)
