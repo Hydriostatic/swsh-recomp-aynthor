@@ -2411,17 +2411,58 @@ static void gpuw_stores(const ShaderInfo *si, const Range *sbufs, int n, const c
 // The pending submission of the last draw / dispatch whose shaders read or write guest memory in place (global memory):
 // until the GPU has run it, any guest range may be in use by the GPU.
 static uint64_t g_gmem_seq;
+// ... and the ranges it reaches: global memory is accessed through the storage buffers bound to the stage (their
+// address and size are what the shader reads from the driver constants), so a pending draw / dispatch can only touch
+// those. A buffer copy used to flush whenever any such work was pending: once a frame, ~4 ms of GPU wait in a heavy
+// overworld view. A stage with global memory access and no storage buffer bound sets g_gmem_any_seq (any range).
+// LARECOMP_GMEM_PRECISE=0: any pending global-memory work may touch any range (the old rule).
+typedef struct { uint64_t a, e, seq; } GmemRange;
+#define GMR_MAX 256
+static GmemRange g_gmr[GMR_MAX];
+static int g_ngmr;
+static uint64_t g_gmem_any_seq;
+static void gmem_ranges_note(const Range *sb, int n) {
+    uint64_t seq = vk_pending_seq();
+    bool any = false;
+    for (int i = 0; i < n; i++) {
+        if (!sb[i].addr) continue;
+        any = true;
+        uint64_t a = sb[i].addr, e = sb[i].addr + (sb[i].size ? sb[i].size : 1);
+        int k = 0;
+        while (k < g_ngmr && !(g_gmr[k].a == a && g_gmr[k].e == e)) k++;
+        if (k == g_ngmr) {
+            if (g_ngmr == GMR_MAX) {  // (full: drop the finished ones)
+                uint64_t done = vk_completed_seq();
+                int m = 0;
+                for (int j = 0; j < g_ngmr; j++) if (g_gmr[j].seq > done) g_gmr[m++] = g_gmr[j];
+                g_ngmr = m;
+            }
+            if (g_ngmr == GMR_MAX) { g_gmem_any_seq = seq; continue; }
+            k = g_ngmr++;
+            g_gmr[k].a = a; g_gmr[k].e = e;
+        }
+        g_gmr[k].seq = seq;
+    }
+    if (!any) g_gmem_any_seq = seq;
+}
+static bool gmem_precise(void) {
+    static int on = -1;
+    if (on < 0) on = !getenv("LARECOMP_GMEM_PRECISE") || atoi(getenv("LARECOMP_GMEM_PRECISE")) != 0;
+    return on;
+}
 static bool gpuw_overlaps(uint64_t a, uint64_t n);
 // The GPU may still read or write [a, a + n) of guest memory in place: a compute / shader store range (gpuw), or work
 // with global memory access not finished yet. Everything else the GPU uses was copied when its command was recorded
 // (constant buffers, vertex / index data outside gpuw ranges, texture uploads), in command order on this thread.
 static bool gpu_may_touch(uint64_t a, uint64_t n) {
     if (gpuw_overlaps(a, n)) return true;
-    if (g_gmem_seq) {
-        uint64_t done = 0;
-        vkGetSemaphoreCounterValue(g_vk.dev, g_vk.timeline, &done);
-        if (g_gmem_seq > done) return true;
-    }
+    if (!g_gmem_seq) return false;
+    uint64_t done = 0;
+    vkGetSemaphoreCounterValue(g_vk.dev, g_vk.timeline, &done);
+    if (!gmem_precise()) return g_gmem_seq > done;
+    if (g_gmem_any_seq > done) return true;
+    for (int i = 0; i < g_ngmr; i++)
+        if (g_gmr[i].seq > done && a < g_gmr[i].e && g_gmr[i].a < a + n) return true;
     return false;
 }
 static bool gpuw_overlaps(uint64_t a, uint64_t n) {
@@ -2664,7 +2705,7 @@ static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
     gp_mark(cb, "dispatch %ux%ux%u (local %ux%ux%u)", gx, gy, gz, cp->local[0], cp->local[1], cp->local[2]);
     dl_note("dispatch %ux%ux%u cs %llx gmem %d", gx, gy, gz, (unsigned long long)st.program->stages[5].code_addr, cp->si->uses_gmem);
     gpuw_stores(cp->si, st.sbuf[5], 16, "compute shader", st.program->stages[5].code_addr);
-    if (cp->si->uses_gmem) { readbacks_before_gmem(); g_gmem_seq = vk_pending_seq(); }
+    if (cp->si->uses_gmem) { readbacks_before_gmem(); g_gmem_seq = vk_pending_seq(); gmem_ranges_note(st.sbuf[5], 16); }
     for (int i = 0; i < 16; i++) if (st.sbuf[5][i].addr) gpuw_note(st.sbuf[5][i].addr, st.sbuf[5][i].size);  // (any storage buffer it has bound)
     nfeedback = 0;
     VkDescriptorSet ds = stage_set(&cp->p, cp->p.set_layout[0], 0, 5, cp->si, NULL, NULL, gx, gy, gz, NULL);
@@ -3372,7 +3413,12 @@ static void draw_(CmdRec *r, bool indexed) {
     uint64_t prof_t1_ = prof ? SDL_GetTicksNS() : 0;
     gpuw_stores(pr->vi, st.sbuf[0], 16, "vertex shader", st.program->stages[0].code_addr);
     gpuw_stores(pr->fi, st.sbuf[1], 16, "fragment shader", st.program->stages[1].code_addr);
-    if (pr->vi->uses_gmem || pr->fi->uses_gmem) { readbacks_before_gmem(); g_gmem_seq = vk_pending_seq(); }
+    if (pr->vi->uses_gmem || pr->fi->uses_gmem) {
+        readbacks_before_gmem();
+        g_gmem_seq = vk_pending_seq();
+        if (pr->vi->uses_gmem) gmem_ranges_note(st.sbuf[0], 16);
+        if (pr->fi->uses_gmem) gmem_ranges_note(st.sbuf[1], 16);
+    }
     VkDescriptorSet fset = stage_set(pr, pr->set_layout[1], 1, 1, pr->fi, rs0, tint, 0, 0, 0, fii);
     if (prof) prof_sets += SDL_GetTicksNS() - prof_t1_;
     VkDescriptorSet sets[2] = {vset, fset};
