@@ -1403,6 +1403,112 @@ static void translate_program(void *arg) {
     compile_program(p);  // (this worker: queued again it would wait behind the other translations)
 }
 
+// ================================================================== shader content hashes (render thread)
+// A program is identified by its stages' code contents, hashed HERE, at the draw, in the GPU order of commands: the
+// game may write a shader's code with a GPU copy (CopyBufferToBuffer: a memmove on this thread, in order) that runs
+// after nvnProgramSetShaders, so a hash taken in SetShaders could be of the old code at that address and pair the new
+// program with the old translation (G4, the black rug, 1 run in 9 after keying by the SetShaders hash). Cached by
+// address; an entry is dropped when a copy writes over its code or the game hands a program over at that address.
+#define SH_TAB (1 << 14)
+static struct { uint64_t addr, hash; uint32_t size; } g_sh_tab[SH_TAB];
+static uint64_t g_sh_lo = ~0ull, g_sh_hi;  // range of the cached blobs (a copy outside it has nothing to drop)
+static pthread_mutex_t g_sh_set_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t *g_sh_set;
+static int g_nsh_set, g_cap_sh_set;
+static uint64_t stat_sh_hashed, stat_sh_dropped;
+// 64 KB pages that hold cached code (count per page): a copy that touches none of them has nothing to drop
+#define SH_PAGES (1 << 13)
+static struct { uint64_t page; uint32_t n; } g_sh_pages[SH_PAGES];
+static int sh_page_slot(uint64_t page, bool add) {
+    uint32_t i = (uint32_t)(page ^ (page >> 13)) & (SH_PAGES - 1);
+    for (int k = 0; k < SH_PAGES; k++, i = (i + 1) & (SH_PAGES - 1)) {
+        if (g_sh_pages[i].page == page && g_sh_pages[i].n) return (int)i;
+        if (!g_sh_pages[i].n) {
+            if (!add) { if (!g_sh_pages[i].page) return -1; continue; }  // (a freed slot: keep probing)
+            g_sh_pages[i].page = page;
+            return (int)i;
+        }
+    }
+    return -1;
+}
+static void sh_pages_note(uint64_t addr, uint32_t size, int d) {
+    for (uint64_t p = addr >> 16; p <= (addr + size - 1) >> 16; p++) {
+        int s = sh_page_slot(p, d > 0);
+        if (s >= 0) g_sh_pages[s].n += (uint32_t)d;
+    }
+}
+
+void renderer_stage_set(uint64_t addr) {
+    pthread_mutex_lock(&g_sh_set_lock);
+    if (g_nsh_set == g_cap_sh_set) {
+        g_cap_sh_set = g_cap_sh_set ? g_cap_sh_set * 2 : 256;
+        g_sh_set = realloc(g_sh_set, (size_t)g_cap_sh_set * sizeof *g_sh_set);
+    }
+    g_sh_set[g_nsh_set++] = addr;
+    pthread_mutex_unlock(&g_sh_set_lock);
+}
+
+static int sh_slot(uint64_t addr) {
+    uint32_t i = (uint32_t)((addr >> 4) ^ (addr >> 21)) & (SH_TAB - 1);
+    for (int n = 0; n < SH_TAB; n++, i = (i + 1) & (SH_TAB - 1))
+        if (!g_sh_tab[i].addr || g_sh_tab[i].addr == addr) return (int)i;
+    return -1;
+}
+
+static void sh_drop_slot(int i) {  // (open addressing: re-insert the rest of the cluster)
+    sh_pages_note(g_sh_tab[i].addr, g_sh_tab[i].size, -1);
+    g_sh_tab[i].addr = 0;
+    stat_sh_dropped++;
+    for (int j = (i + 1) & (SH_TAB - 1); g_sh_tab[j].addr; j = (j + 1) & (SH_TAB - 1)) {
+        typeof(g_sh_tab[0]) e = g_sh_tab[j];
+        g_sh_tab[j].addr = 0;
+        int k = sh_slot(e.addr);
+        if (k >= 0) g_sh_tab[k] = e;
+    }
+}
+
+// a guest-memory write on this thread (copies): drop the hashes of the code it overlaps
+static void sh_written(uint64_t dst, uint64_t size) {
+    if (!size || dst + size <= g_sh_lo || dst >= g_sh_hi) return;
+    bool any = false;
+    for (uint64_t p = dst >> 16; p <= (dst + size - 1) >> 16 && !any; p++) any = sh_page_slot(p, false) >= 0;
+    if (!any) return;
+    for (int i = 0; i < SH_TAB; i++)
+        if (g_sh_tab[i].addr && g_sh_tab[i].addr < dst + size && dst < g_sh_tab[i].addr + g_sh_tab[i].size) { sh_drop_slot(i); i--; }
+}
+
+static void sh_pump(void) {  // (start of each submitted list: the programs handed over since)
+    uint64_t a[256];
+    pthread_mutex_lock(&g_sh_set_lock);
+    int n = g_nsh_set < 256 ? g_nsh_set : 256;
+    memcpy(a, g_sh_set, (size_t)n * sizeof *a);
+    memmove(g_sh_set, g_sh_set + n, (size_t)(g_nsh_set - n) * sizeof *a);
+    g_nsh_set -= n;
+    pthread_mutex_unlock(&g_sh_set_lock);
+    for (int i = 0; i < n; i++) {
+        int s = sh_slot(a[i]);
+        if (s >= 0 && g_sh_tab[s].addr) sh_drop_slot(s);
+    }
+}
+
+static uint64_t stage_hash_rt(const NvnShaderStage *ss) {
+    if (!ss->code_addr || !ss->code_size) return 0;
+    int s = sh_slot(ss->code_addr);
+    if (s >= 0 && g_sh_tab[s].addr && g_sh_tab[s].size == ss->code_size) return g_sh_tab[s].hash;
+    uint64_t h = 0xcbf29ce484222325ull;
+    const uint8_t *b = (const uint8_t *)(uintptr_t)ss->code_addr;
+    for (uint32_t k = 0; k < ss->code_size; k++) h = (h ^ b[k]) * 0x100000001B3ull;
+    if (!h) h = 1;
+    stat_sh_hashed++;
+    if (s >= 0) {
+        g_sh_tab[s].addr = ss->code_addr, g_sh_tab[s].hash = h, g_sh_tab[s].size = ss->code_size;
+        sh_pages_note(ss->code_addr, ss->code_size, +1);
+        if (ss->code_addr < g_sh_lo) g_sh_lo = ss->code_addr;
+        if (ss->code_addr + ss->code_size > g_sh_hi) g_sh_hi = ss->code_addr + ss->code_size;
+    }
+    return h;
+}
+
 #define PROG_TAB 4096
 static struct { uint64_t key; Prog *prog; } prog_tab[PROG_TAB];
 
@@ -1445,15 +1551,25 @@ static Prog *get_program_q(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey, boo
     uint64_t h = 0xcbf29ce484222325ull;
     // The stages by content when their hashes are known (the game holds byte-identical shaders at several addresses:
     // 531 of 649 pipelines in one run were such copies, each translated and built again), else by address.
-    bool by_content = np->stages[0].content_hash && (np->stages[1].content_hash || !(np->stage_mask & 2));
+    uint64_t ch[2] = {stage_hash_rt(&np->stages[0]), (np->stage_mask & 2) ? stage_hash_rt(&np->stages[1]) : 0};
+    bool by_content = ch[0] && (ch[1] || !(np->stage_mask & 2));
+    for (int i = 0; i < 2; i++)  // (research: the code changed between nvnProgramSetShaders and this draw)
+        if (ch[i] && np->stages[i].content_hash && ch[i] != np->stages[i].content_hash) {
+            static int n;
+            if (n++ < 40) LOG("[shhash] stage %d at %llx: SetShaders hash %016llx, draw hash %016llx\n", i,
+                              (unsigned long long)np->stages[i].code_addr, (unsigned long long)np->stages[i].content_hash,
+                              (unsigned long long)ch[i]);
+        }
     for (int i = 0; i < 2; i++) {
-        uint64_t a = by_content ? np->stages[i].content_hash : np->stages[i].code_addr;
+        uint64_t a = by_content ? ch[i] : np->stages[i].code_addr;
         for (int k = 0; k < 8; k++) { h ^= (a >> (k * 8)) & 0xFF; h *= 0x100000001B3ull; }
     }
     h ^= by_content;
     const uint8_t *vb = (const uint8_t *)vkey;
     for (size_t i = 0; i < sizeof *vkey; i++) { h ^= vb[i]; h *= 0x100000001B3ull; }
     for (int i = 0; i < 8; i++) { h ^= fkey->rt_kind[i]; h *= 0x100000001B3ull; }
+    h = (h ^ fkey->tex_uint) * 0x100000001B3ull;
+    h = (h ^ ((uint64_t)fkey->tex_sint << 32)) * 0x100000001B3ull;
     if (!h) h = 1;
     uint32_t slot = (uint32_t)(h ^ (h >> 31)) & (PROG_TAB - 1);
     while (prog_tab[slot].key && prog_tab[slot].key != h) slot = (slot + 1) & (PROG_TAB - 1);
@@ -1467,8 +1583,8 @@ static Prog *get_program_q(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey, boo
     }
     p->vkey = *vkey;
     p->fkey = *fkey;
-    p->chash[0] = np->stages[0].content_hash;
-    p->chash[1] = np->stages[1].content_hash;
+    p->chash[0] = by_content ? ch[0] : 0;
+    p->chash[1] = by_content ? ch[1] : 0;
     if (prewarm) run_job_low(translate_program, p);
     else run_job(translate_program, p);
     return p;
@@ -2227,7 +2343,12 @@ static void texture_info(int stage, ShaderInfo *si, int i, VkDescriptorImageInfo
                 }
         }
     }
-    if (h && st.spool && tsc < (uint32_t)st.spool->count) smp = vk_sampler(&((NvnSamplerDesc *)st.spool->entries)[tsc]);
+    if (h && st.spool && tsc < (uint32_t)st.spool->count) {
+        NvnSamplerDesc *sd = &((NvnSamplerDesc *)st.spool->entries)[tsc];
+        bool int_view = h && st.tpool && tic < (uint32_t)st.tpool->count && ((NvnTexEntry *)st.tpool->entries)[tic].tex &&
+                        rt_kind(((NvnTexEntry *)st.tpool->entries)[tic].tex->format);
+        smp = int_view ? vk_sampler_nearest(sd) : vk_sampler(sd);  // (an integer view can't be filtered)
+    }
     if (!view) view = vk_dummy_view(st_->type);
     if (!smp) smp = vk_default_sampler(true);
     *out = (VkDescriptorImageInfo){smp, view, VK_IMAGE_LAYOUT_GENERAL};
@@ -2327,7 +2448,8 @@ static CsProg *compute_program(NvnProgram *np) {
     int n = g_cs_n;
     // keyed by content when known: the game reuses its shader memory between areas, and a key by address returned the
     // translation of the shader that was there before (G4, the black rug: the same bug in the graphics programs)
-    uint64_t key = ss->content_hash ? ss->content_hash : ss->code_addr;
+    uint64_t ch = stage_hash_rt(ss);
+    uint64_t key = ch ? ch : ss->code_addr;
     for (int i = 0; i < n; i++) if (tab[i].addr == key) return tab[i].cp;
     CsProg *cp = calloc(1, sizeof *cp);
     if (n < 256) { tab[n].addr = key; tab[n].cp = cp; g_cs_n = n + 1; }
@@ -2533,7 +2655,8 @@ static bool recipe_known_add(uint64_t c) {  // false when already known
 
 static void recipe_path(char *out, size_t n) {
     extern const char *rt_cache_dir(void);
-    snprintf(out, n, "%s/pipeline_recipes.bin", rt_cache_dir());
+    // (the record layout in the name: a build whose keys changed size starts its own file instead of misreading)
+    snprintf(out, n, "%s/pipeline_recipes_v%u_%u_%u.bin", rt_cache_dir(), RECIPE_VERSION, (unsigned)sizeof(ShaderKey), (unsigned)sizeof(PipeKey));
 }
 
 static int cmp_rec_stage(const void *a, const void *b) {
@@ -2708,9 +2831,11 @@ static void recipes_pump(void) {
             np.stage_mask = s1 >= 0 ? 3 : 1;
             np.stages[0].stage = 0, np.stages[0].code_addr = g_stage_tab[s0].addr, np.stages[0].const_offset = g_stage_tab[s0].co;
             np.stages[0].content_hash = r->r.chash[0];
+            np.stages[0].code_size = g_stage_tab[s0].size;
             if (s1 >= 0) {
                 np.stages[1].stage = 1, np.stages[1].code_addr = g_stage_tab[s1].addr, np.stages[1].const_offset = g_stage_tab[s1].co;
                 np.stages[1].content_hash = r->r.chash[1];
+                np.stages[1].code_size = g_stage_tab[s1].size;
             }
             if (!stage_still_there(&g_stage_tab[s0]) || (s1 >= 0 && !stage_still_there(&g_stage_tab[s1]))) {
                 r->state = 3;  // (moved or freed since: no prewarm; a draw that needs it translates it as before)
@@ -2750,6 +2875,9 @@ void recipes_stats(char *out, size_t n) {
              (unsigned long long)stat_recipe_adopted, (unsigned long long)stat_recipe_recorded, (unsigned long long)stat_pipes_drawn,
              (unsigned long long)stat_recipe_nohash[0], (unsigned long long)stat_recipe_nohash[1], (unsigned long long)stat_recipe_dup, (unsigned long long)stat_recipe_stale);
     stat_pipes_drawn = stat_recipe_nohash[0] = stat_recipe_nohash[1] = stat_recipe_dup = stat_recipe_stale = 0;
+    size_t l = strlen(out);
+    snprintf(out + l, n - l, " | shader hashes %llu, dropped %llu", (unsigned long long)stat_sh_hashed, (unsigned long long)stat_sh_dropped);
+    stat_sh_hashed = stat_sh_dropped = 0;
     stat_recipe_progs = stat_recipe_pipes = stat_recipe_adopted = stat_recipe_recorded = 0;
 }
 
@@ -2785,6 +2913,26 @@ static void draw_(CmdRec *r, bool indexed) {
     Prog *pr = get_program(st.program, &vkey, &fkey);
     if (pr) wait_built(&pr->state, translate_program, pr);
     if (!pr || atomic_load(&pr->state) != 1) { SKIP(pr ? 1 + (atomic_load(&pr->state) > 1) : 3); return; }
+    static int texint = -1;
+    if (texint < 0) texint = !getenv("LARECOMP_TEXINT") || atoi(getenv("LARECOMP_TEXINT")) != 0;
+    if (texint) {  // textures bound to integer formats: the program's variant that declares them so (ShaderKey.tex_uint / tex_sint)
+        uint32_t m[2][2] = {{0, 0}, {0, 0}};  // [stage][uint, sint]
+        for (int sgi = 0; sgi < 2; sgi++) {
+            ShaderInfo *si = sgi ? pr->fi : pr->vi;
+            for (int i = 0; si && i < si->ntex && i < 32; i++) {
+                if (si->tex[i].shadow) continue;
+                NvnTexture *t = shader_texture_object(sgi, &si->tex[i]);
+                int kind = t ? rt_kind(t->format) : 0;
+                if (kind) m[sgi][kind == 2 ? 0 : 1] |= 1u << i;
+            }
+        }
+        if (m[0][0] != vkey.tex_uint || m[0][1] != vkey.tex_sint || m[1][0] != fkey.tex_uint || m[1][1] != fkey.tex_sint) {
+            vkey.tex_uint = m[0][0], vkey.tex_sint = m[0][1], fkey.tex_uint = m[1][0], fkey.tex_sint = m[1][1];
+            pr = get_program(st.program, &vkey, &fkey);
+            if (pr) wait_built(&pr->state, translate_program, pr);
+            if (!pr || atomic_load(&pr->state) != 1) { SKIP(pr ? 1 + (atomic_load(&pr->state) > 1) : 3); return; }
+        }
+    }
     {   // fragment-shader hash: interior backdrop detection (widescreen), skip lists, item twinkle (renderer.m)
         static uint64_t last_fs, last_hash;
         uint64_t fs = st.program->stages[1].code_addr;
@@ -3846,7 +3994,7 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
 static void exec_list(uint64_t handle, int depth) {
     uint64_t p = handle;
     if (depth == 0) st.obj = 0, st.obj_draw = 0;  // (a submitted list starts with no object; its called lists inherit)
-    if (depth == 0) recipes_pump();  // (pipeline recipes: prewarm what the programs handed over complete)
+    if (depth == 0) { sh_pump(); recipes_pump(); }  // (pipeline recipes: prewarm what the programs handed over complete)
     for (int guard = 0; guard < 10000000; guard++) {
         CmdRec *r = cmd_rec_at(p);  // (p is a guest address; the record is in the shadow, nvn.h)
         void *x = r->extra;
@@ -4063,6 +4211,7 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_COPY_BUFFER_TO_BUFFER:
             renderer_flush();
             memmove((void *)(uintptr_t)r->x[1], (void *)(uintptr_t)r->x[0], r->x[2]);
+            sh_written(r->x[1], r->x[2]);  // (shader code copied in: its cached hash is stale)
             break;
         default: break;
         }

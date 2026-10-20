@@ -820,6 +820,30 @@ static VkCompareOp compare_op(uint32_t f) {
     }
 }
 
+// The same sampler with NEAREST filtering (no linear minification / magnification / mip blending), for views of integer
+// formats, which Vulkan can't filter. Cached by the descriptor's contents (backend excluded).
+VkSampler vk_sampler_nearest(NvnSamplerDesc *d) {
+    static struct { uint64_t h; VkSampler s; } tab[256];
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    NvnSamplerDesc n = *d;
+    n.backend = NULL;
+    n.mag_filter = 0;
+    n.min_filter = n.min_filter <= 1 ? 0 : 2;  // (keeps "mipmapped", with the nearest level)
+    n.max_aniso = 1;
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (size_t i = 0; i < sizeof n; i++) h = (h ^ ((const uint8_t *)&n)[i]) * 0x100000001B3ull;
+    pthread_mutex_lock(&lock);
+    uint32_t i = (uint32_t)(h ^ (h >> 32)) & 255;
+    for (int k = 0; k < 256 && tab[i].h && tab[i].h != h; k++) i = (i + 1) & 255;
+    VkSampler s = tab[i].h == h ? tab[i].s : VK_NULL_HANDLE;
+    if (!s) {
+        s = vk_sampler(&n);  // (n.backend now holds it; the table keeps it)
+        if (!tab[i].h) { tab[i].h = h; tab[i].s = s; }
+    }
+    pthread_mutex_unlock(&lock);
+    return s;
+}
+
 VkSampler vk_sampler(NvnSamplerDesc *d) {
     if (d->backend) return (VkSampler)d->backend;
     VkSamplerCreateInfo si = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};

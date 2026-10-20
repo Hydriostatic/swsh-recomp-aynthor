@@ -652,7 +652,11 @@ static void set_shaders(Cpu *c, int stride) {
                 if (!h) h = 1;
                 renderer_stage_seen(h, code, p->stages[stage].const_offset, size);
             }
+            if (size && size <= (16u << 20)) {
+                renderer_stage_set(code);  // (the render thread hashes this address again at its next draw)
+            }
             p->stages[stage].content_hash = h;
+            p->stages[stage].code_size = size <= (16u << 20) ? size : 0;
         }
     }
     RET(1);

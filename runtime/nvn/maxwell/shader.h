@@ -43,6 +43,10 @@ typedef struct {
     bool flip_y;            // lower-left window origin
     uint32_t vs_out_mask;   // fragment: varyings the vertex shader provides
     uint8_t glsl;           // emit Vulkan GLSL (see the contract above) instead of MSL
+    // texture slots (ShaderInfo.tex[i], bit i) bound to an unsigned / signed integer format at the draw: declared
+    // usampler / isampler and their results passed on as raw bits, as Maxwell's TEX returns them. Maxwell code does not
+    // say the type; a float sampler on an integer view is undefined in Vulkan (validation: VUID-...-format-07753).
+    uint32_t tex_uint, tex_sint;
 } ShaderKey;
 
 typedef struct {

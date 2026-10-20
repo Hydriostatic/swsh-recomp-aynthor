@@ -492,8 +492,10 @@ static const char *tex_type_name(int t) {
 
 // Write texture results: component mask selects which of r,g,b,a go to consecutive registers.
 static void write_tex_result(Ctx *c, int slot, const char *call, uint32_t mask, int d0, int d1, bool texs, bool f16) {
-    sp(&c->body, "    { float4 t = %s;\n", call);
-    (void)slot;
+    if (c->glsl && c->key && slot >= 0 && slot < 32 && ((c->key->tex_uint | c->key->tex_sint) >> slot & 1))
+        sp(&c->body, "    { float4 t = uintBitsToFloat(uint4(%s));\n", call);  // (integer texture: raw bits)
+    else
+        sp(&c->body, "    { float4 t = %s;\n", call);
     if (f16) {
         // TEXS/TLDS .F16: components (in mask order) packed as half pairs into d0 (lo, hi) and d1 (lo, hi)
         int comps[4], n = 0;
@@ -1821,7 +1823,15 @@ static const char glsl_prelude_half[] =
     "uint hpack(vec2 r, uint merge, uint old) { if (merge == 1u) return floatBitsToUint(r.x); uint lo = packHalf2x16(vec2(r.x, 0.0f)), hi = packHalf2x16(vec2(r.y, 0.0f)); if (merge == 2u) return (old & 0xFFFF0000u) | lo; if (merge == 3u) return (old & 0xFFFFu) | (hi << 16); return lo | (hi << 16); }\n"
     "uint prmt(uint a, uint b, uint sel) { uint r = 0u; for (uint i = 0u; i < 4u; i++) { uint s = (sel >> (i * 4u)) & 7u; uint bt = s < 4u ? (a >> (s * 8u)) & 0xFFu : (b >> ((s - 4u) * 8u)) & 0xFFu; r |= bt << (i * 8u); } return r; }\n";
 
-static const char *glsl_sampler_type(const ShaderTexture *t) {
+static const char *glsl_sampler_type(const ShaderTexture *t, int slot, const ShaderKey *key) {
+    if (key && !t->shadow && ((key->tex_uint | key->tex_sint) >> slot & 1)) {
+        static const char *const un[] = {"usampler1D", "usampler2D", "usampler3D", "usamplerCube", "usampler2DArray",
+                                         "usamplerCubeArray", "usampler1DArray"};
+        static const char *const sn[] = {"isampler1D", "isampler2D", "isampler3D", "isamplerCube", "isampler2DArray",
+                                         "isamplerCubeArray", "isampler1DArray"};
+        int ty = t->type <= TEXTYPE_1D_ARRAY ? t->type : TEXTYPE_2D;
+        return (key->tex_uint >> slot & 1) ? un[ty] : sn[ty];
+    }
     static const char *const names[][2] = {
         {"sampler1D", "sampler1DShadow"}, {"sampler2D", "sampler2DShadow"}, {"sampler3D", "sampler3D"},
         {"samplerCube", "samplerCubeShadow"}, {"sampler2DArray", "sampler2DArrayShadow"},
@@ -1871,7 +1881,7 @@ static ShaderInfo *glsl_finish(Ctx *c, bool any_branch, bool dbg) {
     }
     for (int i = 0; i < info->ntex; i++) {
         ShaderTexture *t = &info->tex[i];
-        sp(&s, "layout(set = %d, binding = %d) uniform %s t%d;\n", set, 32 + i, glsl_sampler_type(t), i);
+        sp(&s, "layout(set = %d, binding = %d) uniform %s t%d;\n", set, 32 + i, glsl_sampler_type(t, i, key), i);
         // size of level l as (width, height, depth or layers)
         switch (t->type) {
         case TEXTYPE_1D: sp(&s, "ivec3 tsize%d(int l) { return ivec3(textureSize(t%d, l), 1, 1); }\n", i, i); break;
