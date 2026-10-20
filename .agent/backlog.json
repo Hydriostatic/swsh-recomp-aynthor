@@ -29,10 +29,20 @@
    "title": "Rodada com Vulkan Validation Layers (básica, sync, GPU-AV) nos cenários; triagem dos ERROR",
    "repro": "tools/swsh/scenario.py <cenário> --validation sync",
    "regression": "vkval_errors_max nos cenários aprovados",
-   "status": "open",
-   "attempts": 0,
+   "status": "partial",
+   "attempts": 1,
    "max_attempts": 6,
-   "stalls": 0
+   "stalls": 0,
+   "last_evidence_hash": "1701230cdc20",
+   "history": [
+    {
+     "when": "2026-10-20T03:38:20",
+     "commit": "9098f9c",
+     "status": "partial",
+     "evidence": "erros achados: format-07753/magFilter-04553 (corrigidos: TEXINT 3001d97), SYNC-HAZARD-PRESENT-AFTER-WRITE (aberto); camada MSYS2 cai na propria thread",
+     "note": "precisa da camada oficial do Vulkan SDK (instalador com UAC)"
+    }
+   ]
   },
   {
    "id": "G4",
@@ -267,10 +277,20 @@
    "title": "Teste diferencial do lifter contra o Unicorn (amostras de instruções reais do main/sdk por formato; registradores, flags e memória) - técnica do OpenSmash/mk8",
    "repro": "tools/lifter.py",
    "regression": "tests/runtime/difftest",
-   "status": "open",
-   "attempts": 0,
+   "status": "partial",
+   "attempts": 1,
    "max_attempts": 6,
-   "stalls": 0
+   "stalls": 0,
+   "last_evidence_hash": "30446745e4f6",
+   "history": [
+    {
+     "when": "2026-10-20T03:38:20",
+     "commit": "9098f9c",
+     "status": "partial",
+     "evidence": "main: 2995 formatos x 8 estados, 0 diferencas; controle negativo detectado; sem memoria/desvios ainda",
+     "note": "tests/runtime/difftest/difftest.py (9098f9c)"
+    }
+   ]
   }
  ]
 }

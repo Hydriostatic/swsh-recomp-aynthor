@@ -342,9 +342,12 @@ def main():
     a.add_argument("--run-timeout", type=int, default=3 * 3600)
     a.add_argument("--budget-usd", type=float, default=0)
     args = ap.parse_args()
-    with Lock():
-        sys.exit({"status": cmd_status, "regress": cmd_regress, "baseline": cmd_baseline, "next": cmd_next,
-                  "record": cmd_record, "agent": cmd_agent}[args.cmd](args) or 0)
+    fn = {"status": cmd_status, "regress": cmd_regress, "baseline": cmd_baseline, "next": cmd_next,
+          "record": cmd_record, "agent": cmd_agent}[args.cmd]
+    if args.cmd in ("regress", "baseline", "agent"):  # (the ones that run the game: one at a time)
+        with Lock():
+            sys.exit(fn(args) or 0)
+    sys.exit(fn(args) or 0)
 
 
 if __name__ == "__main__":
