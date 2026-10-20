@@ -124,6 +124,14 @@ def eval_check(c, run_dir, summary):
         elif t == "skipped_window_max":
             val = summary.get("skipped_window")
             ok = val is not None and val <= c["max"]
+        elif t == "alternation_max":  # mean SSIM(n, n+2) - SSIM(n, n+1) over consecutive shots: > 0 = alternating images
+            fs = [fr(n) for n in range(c["frames"][0], c["frames"][1] + 1) if os.path.exists(fr(n))]
+            if len(fs) < 4:
+                return {"result": "NAO TESTADO", "value": "too few shots"}
+            a = sum(imgcheck.ssim(fs[i], fs[i + 1]) for i in range(len(fs) - 1)) / (len(fs) - 1)
+            b = sum(imgcheck.ssim(fs[i], fs[i + 2]) for i in range(len(fs) - 2)) / (len(fs) - 2)
+            val = round(b - a, 3)
+            ok = val <= c["max"]
         elif t == "skipped_total_max":
             val = summary.get("skipped_total")
             ok = val is not None and val <= c["max"]
@@ -145,8 +153,14 @@ def cmd_regress(args):
         with open(os.path.join(ROOT, "tests", "regression", s + ".json")) as f:
             suite = json.load(f)
         run_dir, summary = run_scenario(suite["scenario"], suite.get("profile", "1440p30"), suite.get("cache", "warm"), "regress")
+        k = 2 if suite.get("profile", "1440p30").endswith("60") else 1  # (frames are given at 30 fps; shots double at 60)
         for c in suite["checks"]:
             key = f"{s}/{c['id']}"
+            if k != 1:
+                c = dict(c)
+                for f in ("a", "b", "frame"):
+                    if f in c: c[f] *= k
+                if "frames" in c: c["frames"] = [x * k for x in c["frames"]]
             r = eval_check(c, run_dir, summary) if run_dir else {"result": "NAO TESTADO", "value": summary.get("status")}
             expect_fail = c.get("expect") == "fail"
             r.update({"bug": c.get("bug", ""), "expected": "fail (open bug)" if expect_fail else "pass",

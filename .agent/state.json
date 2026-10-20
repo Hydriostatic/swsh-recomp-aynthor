@@ -1,13 +1,13 @@
 {
- "cycle": 11,
- "reference_commit": "6ae046b",
+ "cycle": 12,
+ "reference_commit": "3ba7268",
  "active_item": null,
- "updated": "2026-10-20T06:23:53",
+ "updated": "2026-10-20T06:29:40",
  "phase": "Ciclos de correção (ciclo 2 concluído); baseline DoD 3x3 em andamento",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
  "last_hypothesis": "perf: Postwick limitado pela CPU (a separar com perfil por thread)",
  "next_action": "analisar a baseline DoD (reports/baseline/*.md); PERF60 com perfil real; G3 (título); difftest com memória; SYNC-HAZARD do present",
- "last_item": "DIFFTEST",
- "last_result": "partial",
- "last_evidence": "main sem memoria: 2995 formatos x 8, 0 dif; com memoria (loads/stores, regiao de 64 KB): 371 formatos x 8, 0 dif"
+ "last_item": "G3",
+ "last_result": "open",
+ "last_evidence": "reproduz so no modo 60 fps: titulo 1440p60 alternancia 0,226 (SSIM vizinhos 0,71 x a dois 0,94); 30 fps -0,028 (normal), inclusive no build do ciclo 0"
 }

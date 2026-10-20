@@ -1,0 +1,6 @@
+{"scenario": "title", "profile": "1440p60", "cache": "warm",
+ "checks": [
+  {"id": "no-crash", "type": "status_ok"},
+  {"id": "G3-no-alternation", "bug": "G3", "type": "alternation_max", "frames": [1960, 1979], "max": 0.05, "expect": "fail",
+   "why": "title stadium: consecutive shots differ (SSIM 0.71) much more than shots two apart (0.94) in 60 fps mode only; 30 fps shows no alternation (0.987 vs 0.96)"}
+ ]}
