@@ -124,6 +124,9 @@ def eval_check(c, run_dir, summary):
         elif t == "skipped_window_max":
             val = summary.get("skipped_window")
             ok = val is not None and val <= c["max"]
+        elif t == "skipped_total_max":
+            val = summary.get("skipped_total")
+            ok = val is not None and val <= c["max"]
         elif t == "vkval_errors_max":
             val = summary.get("vkval_errors")
             ok = val is not None and val <= c["max"]

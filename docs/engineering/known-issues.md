@@ -5,11 +5,8 @@ O estado vivo fica em `.agent/backlog.json` (`python tools/agent/supervisor.py s
 ## Abertos
 | ID | Prioridade | Sintoma | Evidência / reprodução | Situação |
 |---|---|---|---|---|
-| TITLE-EXIT | P0 | O cenário `title` sai com código 1 por volta do quadro 1966, sem FATAL nem exceção no log | `reports/runs/title/20261020-004409-base-1440p30-warm-1` | a investigar |
-| SKIP | P1 | Draws pulados enquanto o programa ou o pipeline compila (2.037 numa rodada com cache quente) | `graphics-audit.md`; `tests/regression/stairs.json` SKIP-window | a investigar |
 | VKVAL | P1 | Validation layers ainda não rodadas nos cenários | — | NÃO TESTADO |
-| G4 | P1 | Tapete preto no térreo ao chegar pela escada; sai certo quando carregado direto | `tests/regression/stairs.json` G4-rug-not-black (fração preta 1,0 na região do tapete) | aberto |
-| G1 | P1 | Manchas brancas ao entrar andando no quarto | `docs/DIAGNOSTICO-SWSH.md` | aberto, sem reprodução automática |
+| G1 | P1 | Manchas brancas ao entrar andando no quarto | `docs/DIAGNOSTICO-SWSH.md`; `tests/scenarios/room_enter.json` não reproduz (nem com barrier desligado nem no modo antigo de pular draws) | BLOQUEADO: precisa do caminho do jogador |
 | G3 | P1 | Arquibancada piscando no título (o desfoque alterna) | `docs/DIAGNOSTICO-SWSH.md` | aberto |
 | DYNRES | P2 | O jogo desenha a cena a 80% no mundo aberto (1536x864 em alvo 1920x1080) | F9 em `build/logs/sword-20261018-145705.log` | comportamento do jogo; paliativo: render 1440p |
 | PERF60 | P2 | 60 fps não ficam lisos | `performance-baseline.md` | a medir a 1440p |
@@ -21,6 +18,11 @@ O estado vivo fica em `.agent/backlog.json` (`python tools/agent/supervisor.py s
 |---|---|---|---|
 | G2 | `CopyTextureToTexture` com `MIRROR_Y` ignorado | `766239f` | `tests/regression/stairs.json` |
 | "posterização 1080p" | Não era bug: a redução da imagem no visualizador | — | — |
+| G4 | Programas de shader em cache por **endereço**: o jogo reaproveita a memória de shaders entre áreas e o shader novo recebia a tradução do antigo. Isolado: chave por conteúdo sem receitas = correto; chave por endereço = preto | `80eef24` (programas gráficos e de compute por hash de conteúdo) | `tests/regression/stairs.json` G4-rug-not-black |
+| SKIP | Orçamento de 20 ms por quadro e depois pulava; dispatches de compute pulavam sem esperar | `80eef24` (espera com teto por draw + reivindicação do job + receitas) | `SKIP-total` = 0 em stairs e room |
+| BARRIER | `CMD_BARRIER` gravado e ignorado | `80eef24` | regressões gerais; A/B sem custo |
+| KWAIT | Esperas temporizadas de 1-8 ms duravam ~16 ms (MinGW + Windows) | `27006f3` | `tests/runtime/timed_wait_test.c` |
+| TITLE-EXIT | Mortes com código 1: `taskkill /IM lasrecomp.exe` de outro projeto (letsgo `tools/trace_run.sh`) derrubava todo runtime da máquina | `16ee01b` (nosso script) + `scenario.py` repete em EXTERNAL-KILL | — (o script do letsgo-recomp ainda faz isso) |
 
 ## Fora do escopo / NÃO TESTADO
 - Pokémon Shield (sem dump).

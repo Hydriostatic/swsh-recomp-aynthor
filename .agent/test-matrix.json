@@ -1,5 +1,87 @@
 {
- "checks": {},
+ "checks": {
+  "stairs/G2-snapshot-upright": {
+   "result": "PASSOU",
+   "value": 0.8,
+   "bug": "G2",
+   "expected": "pass",
+   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
+   "when": "2026-10-20T02:33:47",
+   "commit": "ae25a4c"
+  },
+  "stairs/G2-snapshot-upright-late": {
+   "result": "PASSOU",
+   "value": 0.799,
+   "bug": "G2",
+   "expected": "pass",
+   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
+   "when": "2026-10-20T02:33:47",
+   "commit": "ae25a4c"
+  },
+  "stairs/G4-rug-not-black": {
+   "result": "PASSOU",
+   "value": 0.0,
+   "bug": "G4",
+   "expected": "fail (open bug)",
+   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
+   "when": "2026-10-20T02:33:47",
+   "commit": "ae25a4c"
+  },
+  "stairs/no-crash": {
+   "result": "PASSOU",
+   "value": "OK",
+   "bug": "",
+   "expected": "pass",
+   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
+   "when": "2026-10-20T02:33:47",
+   "commit": "ae25a4c"
+  },
+  "stairs/SKIP-window": {
+   "result": "FALHOU",
+   "value": 764,
+   "bug": "SKIP",
+   "expected": "fail (open bug)",
+   "run": "reports\\runs\\stairs\\20261020-010522-regress-1",
+   "when": "2026-10-20T01:07:05",
+   "commit": "ae25a4c"
+  },
+  "stairs/SKIP-total": {
+   "result": "PASSOU",
+   "value": 0,
+   "bug": "SKIP",
+   "expected": "fail (open bug)",
+   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
+   "when": "2026-10-20T02:33:47",
+   "commit": "ae25a4c"
+  },
+  "room/no-crash": {
+   "result": "PASSOU",
+   "value": "OK",
+   "bug": "",
+   "expected": "pass",
+   "run": "reports\\runs\\room\\20261020-023010-regress-1",
+   "when": "2026-10-20T02:32:04",
+   "commit": "ae25a4c"
+  },
+  "room/room-not-black": {
+   "result": "PASSOU",
+   "value": 123.0,
+   "bug": "",
+   "expected": "pass",
+   "run": "reports\\runs\\room\\20261020-023010-regress-1",
+   "when": "2026-10-20T02:32:04",
+   "commit": "ae25a4c"
+  },
+  "room/SKIP-total": {
+   "result": "PASSOU",
+   "value": 0,
+   "bug": "SKIP",
+   "expected": "fail (open bug)",
+   "run": "reports\\runs\\room\\20261020-023010-regress-1",
+   "when": "2026-10-20T02:32:04",
+   "commit": "ae25a4c"
+  }
+ },
  "benchmarks": {},
  "not_tested": [
   "Pokémon Shield (sem dump do jogo)",

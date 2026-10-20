@@ -1,10 +1,13 @@
 {
- "cycle": 0,
- "reference_commit": "dcdeca3",
+ "cycle": 8,
+ "reference_commit": "80eef24",
  "active_item": null,
- "updated": "2026-10-20T00:46:59",
+ "updated": "2026-10-20T02:34:40",
  "phase": "Fase 0-1: reconhecimento, instrumentação, baseline",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
  "last_hypothesis": "",
- "next_action": "concluir a baseline e commitar o ciclo 0; depois RECOMP-RESEARCH (OpenSmash e mk8-recomp primeiro); só então desenhar a solução do SKIP"
+ "next_action": "concluir a baseline e commitar o ciclo 0; depois RECOMP-RESEARCH (OpenSmash e mk8-recomp primeiro); só então desenhar a solução do SKIP",
+ "last_item": "TITLE-EXIT",
+ "last_result": "fixed",
+ "last_evidence": "saidas com codigo 1 = taskkill /F /IM lasrecomp.exe do tools/trace_run.sh do letsgo-recomp (codigo de saida do taskkill; sem evento de crash no Windows); nosso trace_run.sh corrigido (16ee01b); scenario.py classifica EXTERNAL-KILL e repete"
 }

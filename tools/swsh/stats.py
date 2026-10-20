@@ -49,6 +49,7 @@ def parse_log(text, first=0, last=None):
            "compiles_total": 0, "compiles_window": 0, "shader_wait_ms_total": 0, "translate_ms_total": 0,
            "spirv_ms_total": 0, "pipeline_ms_total": 0, "vkval_errors": 0, "vkval_warnings": 0, "stat_lines": 0,
            "last_frame": 0}
+    prev_frame = 0
     for line in text.splitlines():
         if line.startswith("FATAL") or re.match(r"^\[\w+\] exception|exception [0-9a-f]{8}", line):
             out["crashes"] += 1
@@ -66,9 +67,12 @@ def parse_log(text, first=0, last=None):
         out["spirv_ms_total"] += int(m.group(9))
         out["pipeline_ms_total"] += int(m.group(10))
         out["shader_wait_ms_total"] += int(m.group(11))
-        if frame >= first and (last is None or frame < last + 60):
+        # a stats line covers the frames since the previous one: count it in the window only when all of them are
+        # (a line ending just inside the window can hold a transition's skips from before it)
+        if prev_frame >= first and (last is None or frame <= last + 60):
             out["skipped_window"] += skipped
             out["compiles_window"] += comp
+        prev_frame = frame
         s = SKIP_RE.search(line)
         if s:
             for name, v in zip(SKIP_NAMES, s.groups()):
