@@ -1,13 +1,13 @@
 {
- "cycle": 18,
- "reference_commit": "4d05d36",
+ "cycle": 19,
+ "reference_commit": "4444d6d",
  "active_item": "PERF60",
- "updated": "2026-10-20T15:35:00",
- "phase": "Ciclo 4 concluído: render thread fora do caminho crítico no mundo aberto",
+ "updated": "2026-10-20T18:40:00",
+ "phase": "Ciclo 5: travadas de clima analisadas",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
- "last_hypothesis": "vistas pesadas sem limite ~67-95 fps: GPU ~70% ocupada e o jogo espera a GPU; picos periódicos com a render thread ocupada",
- "next_action": "G3 (plateia a 60 fps); hitch de 250 ms da importação do heap; luma dependente do relógio real nos testes; LEAK",
+ "last_hypothesis": "travadas grandes = primeira compilação de pipeline (cache salvo); ~160 ms = carregamento do próprio jogo (SetCpuBoostMode)",
+ "next_action": "aguardar o jogador repetir a rota; G3 é intermitente (fase); LEAK; HEAPIMPORT",
  "last_item": "PERF60",
- "last_result": "fixed (render thread)",
- "last_evidence": "reports/cycles/004.md"
+ "last_result": "partial",
+ "last_evidence": "reports/cycles/005.md"
 }
