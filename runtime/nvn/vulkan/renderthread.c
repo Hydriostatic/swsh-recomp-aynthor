@@ -113,9 +113,11 @@ static void run(Job *j) {
     }
 }
 
+void sampler_add_thread(void);  // runtime/sampler.c (LARECOMP_SAMPLE)
 static void *render_main(void *arg) {
     (void)arg;
     on_render_thread = true;
+    sampler_add_thread();
     crash_handler_install();
     pthread_mutex_lock(&lk);
     for (;;) {

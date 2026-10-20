@@ -118,6 +118,34 @@ static void report(uint64_t from, uint64_t to) {
     LOG("[sample] profile written to %s\n", path);
 }
 
+// Host threads of the runtime sampled too (sampler_add_thread: the render thread), reported as thread 1000 + n.
+static struct { HANDLE h; uint64_t id; } g_host[8];
+static volatile int g_nhost;
+void sampler_add_thread(void) {
+    if (!getenv("LARECOMP_SAMPLE") || g_nhost == 8) return;
+    HANDLE h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, GetCurrentThreadId());
+    if (!h) return;
+    int n = __atomic_fetch_add(&g_nhost, 1, __ATOMIC_SEQ_CST);
+    g_host[n].id = 1000 + n;
+    __atomic_store_n(&g_host[n].h, h, __ATOMIC_RELEASE);
+}
+
+static void sample_one(HANDLE h, uint64_t id, bool in_svc, uint64_t *fns) {
+    if (SuspendThread(h) == (DWORD)-1) return;
+    int n = unwind(h, fns);
+    ResumeThread(h);
+    int s = slot_of(id);
+    if (s < 0 || !n) return;
+    g_th[s].samples++;
+    if (in_svc) { g_th[s].in_svc++; return; }
+    ent((uint64_t)s << 56 | fns[0])->self++;
+    for (int i = 0; i < n; i++) {
+        bool dup = false;
+        for (int j = 0; j < i && !dup; j++) dup = fns[j] == fns[i];
+        if (!dup) ent((uint64_t)s << 56 | fns[i])->incl++;
+    }
+}
+
 static void *sampler_main(void *arg) {
     const char *e = arg;
     uint64_t from = strtoull(e, NULL, 10), to = strchr(e, ':') ? strtoull(strchr(e, ':') + 1, NULL, 10) : from + 600;
@@ -129,22 +157,10 @@ static void *sampler_main(void *arg) {
     while (renderer_game_frame() < to) {
         for (KThread *t = kernel_thread_list(); t; t = t->anext) {
             if (!t->started || t->finished || !t->host) continue;
-            HANDLE h = (HANDLE)t->host;
-            bool in_svc = t->cur_svc >= 0;
-            if (SuspendThread(h) == (DWORD)-1) continue;
-            int n = unwind(h, fns);
-            ResumeThread(h);
-            int s = slot_of(t->id);
-            if (s < 0 || !n) continue;
-            g_th[s].samples++;
-            if (in_svc) { g_th[s].in_svc++; continue; }
-            ent((uint64_t)s << 56 | fns[0])->self++;
-            for (int i = 0; i < n; i++) {
-                bool dup = false;
-                for (int j = 0; j < i && !dup; j++) dup = fns[j] == fns[i];
-                if (!dup) ent((uint64_t)s << 56 | fns[i])->incl++;
-            }
+            sample_one((HANDLE)t->host, t->id, t->cur_svc >= 0, fns);
         }
+        for (int i = 0; i < g_nhost; i++)
+            if (g_host[i].h) sample_one(g_host[i].h, g_host[i].id, false, fns);
         Sleep(1);
         static uint64_t rounds;
         if (++rounds % 1000 == 0) LOG("[sample] %llu rounds, frame %llu\n", (unsigned long long)rounds, (unsigned long long)renderer_game_frame());
@@ -164,4 +180,5 @@ void sampler_start(void) {
 }
 #else
 void sampler_start(void) {}
+void sampler_add_thread(void) {}
 #endif
