@@ -1,0 +1,14 @@
+{
+ "description": "Open world save; a wild Pokemon starts a battle by itself (~present 2200 at 60 fps); the battle intro and first move menu. With --cache cold: every battle shader built for the first time (stall test)",
+ "save": "build/scenario-saves/openworld",
+ "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8,1500:A:8,1600:A:8,1700:A:8",
+ "exit_at": 1900,
+ "measure": [
+  1050,
+  1890
+ ],
+ "shots": [
+  1300,
+  1800
+ ]
+}

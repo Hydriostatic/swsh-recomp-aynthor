@@ -563,7 +563,9 @@ void backend_represent(void) {
     else SDL_Delay(16);
 }
 
+void vk_gmem_prepare(void);  // exec.c
 void backend_present(NvnTexture *t) {
+    vk_gmem_prepare();
     {   // (LARECOMP_HEAL_KEYS research key F5: every texture re-checks its memory)
         extern volatile int g_heal_tex;
         extern void backend_pool_written(uint64_t addr, uint64_t size);

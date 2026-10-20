@@ -709,6 +709,11 @@ static pthread_cond_t jobs_cond = PTHREAD_COND_INITIALIZER;
 
 static void *worker(void *a) {
     (void)a;
+    // Below the game and render threads: a first visit queues hundreds of builds on 16 workers, which took the CPU from
+    // the threads that make the frame (an area entry with 300 builds pending ran its frames at a fraction of the speed).
+    static int bg = -1;
+    if (bg < 0) bg = !getenv("LARECOMP_WORKER_BG") || atoi(getenv("LARECOMP_WORKER_BG")) != 0;
+    if (bg) plat_thread_background();
     for (;;) {
         pthread_mutex_lock(&jobs_lock);
         while (!jobs_head && !low_head) pthread_cond_wait(&jobs_cond, &jobs_lock);
@@ -2366,6 +2371,18 @@ static VkDescriptorBufferInfo gmem_info(void) {
     static uint32_t zero[1024];
     VkSpan s = vk_transient_copy(zero, sizeof zero, 256);
     return (VkDescriptorBufferInfo){s.buf, s.off, sizeof zero};
+}
+
+// Once a present (backend_present): the guest heap is imported, or re-imported after it grew, here rather than at the
+// first draw / dispatch with global memory access - the import of ~3.2 GB takes ~300-400 ms in the driver, which
+// stalled the first battle / effect that used it; at a present it happens at boot (the heap is set first thing).
+void vk_gmem_prepare(void) {
+    static int off = -1;
+    if (off < 0) off = getenv("LARECOMP_VK_NO_GMEM") != NULL || !g_vk.host_import || (getenv("LARECOMP_GMEM_EARLY") && !atoi(getenv("LARECOMP_GMEM_EARLY")));
+    if (off) return;
+    uint64_t want = (kernel_heap_size() + 0xFFFF) & ~0xFFFFull;
+    if (want > HEAP_MAX) want = HEAP_MAX;
+    if (want > gmem_size && want != gmem_tried) (void)gmem_info();
 }
 
 // Guest memory ranges the GPU may write: the storage buffers a compute dispatch binds (the game's compute shaders produce vertex
