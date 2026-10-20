@@ -621,7 +621,38 @@ static VkSpan copy_dedupe(int slot, const void *data, uint64_t size, uint64_t al
 #define GCOPY_TAB 4096
 static struct { uint64_t addr, size, seq; VkSpan span; bool gpu; } gcopy[GCOPY_TAB];
 static uint64_t gcopy_gen;  // bumped to drop every shared copy (guest memory written mid-list)
-static void guest_copy_flush(void) { gcopy_gen++; }
+static uint64_t stat_gcopy_drops, stat_gcopy_kept;
+static void guest_copy_flush(void) { gcopy_gen++; stat_gcopy_drops++; }
+// The 64 KB pages (hashed into 2^16 bits) that hold the shared copies of the current submission / generation. This thread
+// writes guest memory ~200 times a frame (buffer copies, uniform updates) and the game issues ~500 barriers: dropping every
+// copy each time made the shared copies useless, and a heavy overworld view copied ~31 MB of vertex data a frame.
+// Now a write drops them only when it lands on a page that has a copy, and a barrier only after a shader that stores
+// to guest memory (the only GPU writes the copies can miss). LARECOMP_GCOPY_PRECISE=0: drop on every write / barrier.
+static uint64_t gcopy_pages[1024], gcopy_pages_key;
+static bool g_gpu_stored;  // a shader that stores to guest memory was recorded since the copies were last dropped
+static bool gcopy_precise(void) {
+    static int on = -1;
+    if (on < 0) on = !getenv("LARECOMP_GCOPY_PRECISE") || atoi(getenv("LARECOMP_GCOPY_PRECISE")) != 0;
+    return on;
+}
+static void gcopy_mark(uint64_t a, uint64_t n) {
+    uint64_t key = vk_pending_seq() + (gcopy_gen << 40);
+    if (key != gcopy_pages_key) { memset(gcopy_pages, 0, sizeof gcopy_pages); gcopy_pages_key = key; }
+    for (uint64_t p = a >> 16, e = (a + (n ? n : 1) - 1) >> 16; p <= e; p++) gcopy_pages[(p >> 6) & 1023] |= 1ull << (p & 63);
+}
+// This thread wrote [a, a + n) of guest memory.
+static void guest_copy_written(uint64_t a, uint64_t n) {
+    if (!gcopy_precise()) { guest_copy_flush(); return; }
+    if (gcopy_pages_key != vk_pending_seq() + (gcopy_gen << 40)) return;  // (no copy shared in this submission yet)
+    for (uint64_t p = a >> 16, e = (a + (n ? n : 1) - 1) >> 16; p <= e; p++)
+        if (gcopy_pages[(p >> 6) & 1023] >> (p & 63) & 1) { guest_copy_flush(); return; }
+    stat_gcopy_kept++;
+}
+// An NVN barrier: GPU writes before it are visible after it.
+static void guest_copy_barrier(void) {
+    if (!gcopy_precise() || g_gpu_stored) { guest_copy_flush(); g_gpu_stored = false; }
+    else stat_gcopy_kept++;
+}
 static VkSpan transient_gpu_copy(const void *data, uint64_t size, uint64_t align) {
     VkSpan s = transient_gpu(size ? size : 16, align);
     if (size) memcpy(s.ptr, data, size);
@@ -635,6 +666,7 @@ static VkSpan guest_copy_pool(uint64_t addr, uint64_t size, bool gpu) {  // (gpu
     if (gcopy[slot].seq == seq && gcopy[slot].addr == addr && gcopy[slot].size == size && gcopy[slot].gpu == gpu) return gcopy[slot].span;
     VkSpan s = gpu ? transient_gpu_copy((const void *)(uintptr_t)addr, size, 256) : vk_transient_copy((const void *)(uintptr_t)addr, size, 256);
     gcopy[slot].addr = addr; gcopy[slot].size = size; gcopy[slot].seq = seq; gcopy[slot].span = s; gcopy[slot].gpu = gpu;
+    gcopy_mark(addr, size);
     return s;
 }
 static VkSpan guest_copy(uint64_t addr, uint64_t size) { return guest_copy_pool(addr, size, false); }
@@ -661,6 +693,7 @@ copy:;
     uint64_t len = per_vertex && bound <= (8ull << 20) && bound > need ? bound : need;
     VkSpan sp = transient_gpu_copy((const void *)(uintptr_t)addr, len, 256);
     vcopy[at].addr = addr; vcopy[at].len = len; vcopy[at].seq = seq; vcopy[at].span = sp;
+    gcopy_mark(addr, len);
     return sp;
 }
 
@@ -909,6 +942,12 @@ const char *renderer_stats(void) {
         snprintf(stats_text + n, sizeof stats_text - n, " | buffer copies %llu flushed, %llu inline", (unsigned long long)stat_copy_flushed,
                  (unsigned long long)stat_copy_inline);
         stat_copy_flushed = stat_copy_inline = 0;
+    }
+    if (stat_gcopy_drops || stat_gcopy_kept) {
+        size_t n = strlen(stats_text);
+        snprintf(stats_text + n, sizeof stats_text - n, " | shared copies dropped %llu, kept %llu", (unsigned long long)stat_gcopy_drops,
+                 (unsigned long long)stat_gcopy_kept);
+        stat_gcopy_drops = stat_gcopy_kept = 0;
     }
     if (stat_holds) {  // draws that waited for their program / pipeline (wait_built)
         size_t n = strlen(stats_text);
@@ -2361,6 +2400,7 @@ static void gpuw_note(uint64_t a, uint64_t n) {
 static bool gpuw_unknown;
 static void gpuw_stores(const ShaderInfo *si, const Range *sbufs, int n, const char *what, uint64_t code) {
     if (!si || !si->gmem_stores) return;
+    g_gpu_stored = true;
     bool any = false;
     for (int i = 0; i < n; i++) if (sbufs[i].addr) { gpuw_note(sbufs[i].addr, sbufs[i].size); any = true; }
     if (!any && !gpuw_unknown) {
@@ -3705,6 +3745,7 @@ static void copy_texture_to_buffer(const TexRefRec *src, uint64_t dst) {
     uint64_t total = img * nz;
     static int sync_rb = -1;
     if (sync_rb < 0) sync_rb = getenv("LARECOMP_READBACK_SYNC") ? atoi(getenv("LARECOMP_READBACK_SYNC")) : 0;
+    guest_copy_written(dst, total);  // (dst gets the GPU's result: copies of it taken before are stale)
     {   // an older readback still pending for exactly this range: the game never waited for it (its wait would have
         // landed it before this list ran), so nobody reads it - it is superseded (its buffer freed once the GPU is done)
         pthread_mutex_lock(&g_rb_lock);
@@ -4223,7 +4264,7 @@ static void exec_list(uint64_t handle, int depth) {
                     vk_end_pass();
                     st.rt_dirty = true;
                     vk_full_barrier(vk_cmd());
-                    guest_copy_flush();
+                    guest_copy_barrier();
                     stat_nvn_barriers++;
                 }
             }
@@ -4375,7 +4416,7 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_UPDATE_UNIFORM_BUFFER:
             readback_sync_range(r->x[0] + r->x[2], r->x[3]);
             memcpy((void *)(uintptr_t)(r->x[0] + r->x[2]), x, r->x[3]);
-            guest_copy_flush();  // (cbuf copies shared within the submission are stale now)
+            guest_copy_written(r->x[0] + r->x[2], r->x[3]);  // (cbuf copies shared within the submission may be stale now)
             break;
         case CMD_FENCE_SYNC: {
             static int fence_flush = -1;
@@ -4435,7 +4476,7 @@ static void exec_list(uint64_t handle, int depth) {
             }
             else stat_copy_inline++;
             memmove((void *)(uintptr_t)r->x[1], (void *)(uintptr_t)r->x[0], r->x[2]);
-            guest_copy_flush();           // (copies of guest memory shared within the submission are stale now)
+            guest_copy_written(r->x[1], r->x[2]);  // (copies of guest memory shared within the submission may be stale now)
             sh_written(r->x[1], r->x[2]);  // (shader code copied in: its cached hash is stale)
             break;
         }

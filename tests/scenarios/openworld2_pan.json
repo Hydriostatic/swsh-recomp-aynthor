@@ -1,0 +1,15 @@
+{
+ "description": "openworld2 with the camera panned right (RSTICK_RIGHT, full tilt) through the measured window: the heavy views the player saw drop to ~60 fps uncapped",
+ "save": "build/scenario-saves/openworld2",
+ "input": "600:A:8,800:A:8,700:RSTICK_RIGHT:560",
+ "exit_at": 1300,
+ "measure": [
+  700,
+  1250
+ ],
+ "shots": [
+  900,
+  1100,
+  1250
+ ]
+}

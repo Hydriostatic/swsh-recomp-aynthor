@@ -1,0 +1,13 @@
+{
+ "description": "Open world, the player's save of 20/10 14:50 (standing; ~100 fps uncapped, ~60 when the camera turns to a heavy view). Uncapped runs (LARECOMP_FPS=0) measure the render thread's headroom",
+ "save": "build/scenario-saves/openworld2",
+ "input": "600:A:8,800:A:8",
+ "exit_at": 1300,
+ "measure": [
+  700,
+  1250
+ ],
+ "shots": [
+  1250
+ ]
+}
