@@ -105,6 +105,8 @@ def run_once(name, sc, args, run_dir):
         "LARECOMP_SETTINGS": ini, "LARECOMP_SAVE_DIR": save, "LARECOMP_CACHE_DIR": cache,
         "LARECOMP_FRAMETIME_CSV": os.path.join(run_dir, "frametimes.csv"), "LARECOMP_EXIT_AT_PRESENT": str(exit_at),
         "LARECOMP_NO_LAUNCHER": "1", "LARECOMP_NO_USER_INPUT": "1",
+        # the game lights its scenes by the time of day: every run starts at the same clock (20/10/2026 14:00 -03)
+        "LARECOMP_FIXED_TIME": str(sc.get("fixed_time", 1792515600)),
     })
     if sc.get("input"):
         env["LARECOMP_INPUT"] = scale_input(sc["input"], k)
@@ -130,6 +132,7 @@ def run_once(name, sc, args, run_dir):
         return {"status": "BLOCKED", "reason": "another Sword 1.3.2 instance kept running (the player's?)"}
     exe = os.path.join(ROOT, args.exe)
     t0 = time.time()
+    before = set(sword_instances())
     with open(os.path.join(run_dir, "log.txt"), "wb") as log:
         p = subprocess.Popen([exe, "extracted-132", "--play"], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
@@ -139,6 +142,19 @@ def run_once(name, sc, args, run_dir):
             subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
             code = p.wait()
             status = "TIMEOUT"
+        # The runtime re-executes itself when its guest address range is taken (main.c reserve_guest_space): the
+        # process we started exits 0 and a child goes on writing the same log. Follow such a child to its end.
+        children = [pid for pid in sword_instances() if pid not in before and pid != p.pid]
+        while children and status == "OK":
+            if time.time() - t0 > timeout:
+                for pid in children:
+                    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+                status = "TIMEOUT"
+                break
+            time.sleep(1)
+            children = [pid for pid in sword_instances() if pid in children]
+        if children == [] and code == 0 and time.time() - t0 < 30:
+            code = 0  # (re-executed child finished: its exit is the run's)
     secs = time.time() - t0
     if os.path.isdir(os.path.join(ROOT, "build", "frames")):  # (LARECOMP_SHOT_AT writes build/frames/)
         shutil.move(os.path.join(ROOT, "build", "frames"), frames)

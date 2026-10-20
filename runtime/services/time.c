@@ -11,9 +11,13 @@ static const uint8_t clock_uuid[16] = {0x4c, 0x41, 0x52, 0x65, 0x63, 0x6f, 0x6d,
 
 static int64_t steady_seconds(void) { return (int64_t)(rt_ticks() / 19200000ull); }
 // LARECOMP_DAYS_AHEAD=<n>: the clock n days ahead (tests of daily things: the partner's hunger, daily items)
+// LARECOMP_FIXED_TIME=<unix seconds>: the clock starts there and runs from boot (tests: the game lights its scenes by
+// the time of day, so runs at different hours do not compare - tools/swsh/scenario.py always sets it)
 static int64_t unix_now(void) {
-    static int64_t ahead = -1;
+    static int64_t ahead = -1, fixed = -1;
     if (ahead < 0) ahead = getenv("LARECOMP_DAYS_AHEAD") ? atoll(getenv("LARECOMP_DAYS_AHEAD")) * 86400 : 0;
+    if (fixed < 0) fixed = getenv("LARECOMP_FIXED_TIME") ? atoll(getenv("LARECOMP_FIXED_TIME")) : 0;
+    if (fixed > 0) return fixed + steady_seconds() + ahead;
     return (int64_t)time(NULL) + ahead;
 }
 

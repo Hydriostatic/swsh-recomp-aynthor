@@ -49,3 +49,29 @@
 - RenderDoc nos cenários do Sword: a integração existe (`vulkan/renderdoc.c`, `LARECOMP_RENDERDOC_AT`); o Nsight não está instalado.
 - Equivalência funcional do SPIR-V: `spirv-val` valida a forma, não o comportamento. Comparar com referência do hardware não é possível aqui.
 - Formatos raros, como ASTC (`runtime/nvn/astc.c`), e texturas 3D/cube nos cenários fora de casa.
+
+## Atualização de 20/10 (ciclos 1-2)
+- **Identidade dos programas:** antes, o endereço do código. Agora é o hash do bloco de código (tamanho em
+  `control + 0x704`), calculado **na render thread, no draw**, em cache por endereço e invalidado por cópias que
+  escrevem sobre o código (`CopyBufferToBuffer`) e por `nvnProgramSetShaders`. Motivo: o jogo reaproveita a memória de
+  shaders entre áreas (G4) e pode copiar o código com uma cópia de GPU que só roda depois do SetShaders. Um hash tirado
+  no SetShaders falhou em 1 de 9 rodadas. Também une cópias idênticas do mesmo shader: 649 → 204 pipelines na escada.
+- **Draws pulados:** zero nos cenários da escada e do quarto. O draw ou dispatch espera, com teto de 3 s, e
+  reivindica o job ainda não iniciado. As receitas de pipeline pré-aquecem o que a sessão anterior usou: na segunda
+  rodada, 187 pré-aquecidos e 187 adotados, com 18 esperas que somaram 4 ms.
+- **Barriers NVN:** respeitados (fim do passe, barreira completa). O jogo pede ~70 por quadro com bits de
+  invalidação; sem custo medido.
+- **Validation layers** (`--validation`, camada do MSYS2 1.4.363):
+  - **ERROR** `VUID-vkCmdDrawIndexed-format-07753` e `-magFilter-04553`: um shader amostrava uma textura
+    R16G16B16A16_UINT (alvo 0x2C do passe de composição de luz) por `sampler2D` de float com filtro linear.
+    Corrigido (TEXINT): por draw, os slots com formato inteiro entram na chave do programa (`tex_uint` / `tex_sint`),
+    o tradutor declara `usampler` / `isampler` e repassa os bits crus (como o TEX do Maxwell), e o sampler vira
+    NEAREST. Depois da correção: E = 0 na escada até o ponto da queda da camada.
+  - **ERROR** `SYNC-HAZARD-PRESENT-AFTER-WRITE` (validação de sincronização): o present da swapchain depois de uma
+    transição de layout de `vkCmdEndRenderPass` (o render pass da apresentação ou da interface). A corrigir.
+  - **WARNING** `Undefined-Value-ShaderOutputNotConsumed-DynamicRendering`: o fragment shader escreve c0 num passe
+    sem alvo de cor (passes só de profundidade). Inofensivo.
+  - **BLOQUEIO:** a camada do MSYS2 cai na própria thread (violação de acesso em libwinpthread dentro de
+    `VkLayer_khronos_validation.dll`, depois de `INTERNAL-ERROR-VkSemaphore-state-timeout`) por volta da transição
+    da escada. A validação completa precisa da camada oficial do Vulkan SDK da LunarG (o instalador pede
+    administrador).
