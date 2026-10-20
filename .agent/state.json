@@ -1,0 +1,10 @@
+{
+ "cycle": 0,
+ "reference_commit": "dcdeca3",
+ "active_item": null,
+ "updated": "2026-10-20T00:46:59",
+ "phase": "Fase 0-1: reconhecimento, instrumentação, baseline",
+ "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
+ "last_hypothesis": "",
+ "next_action": "concluir a baseline e commitar o ciclo 0; depois RECOMP-RESEARCH (OpenSmash e mk8-recomp primeiro); só então desenhar a solução do SKIP"
+}

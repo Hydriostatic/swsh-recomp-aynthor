@@ -1,0 +1,2 @@
+{"description": "Player's bedroom, loaded from a save inside it (standing still)", "save": "build/scenario-saves/room",
+ "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8", "exit_at": 3300, "measure": [2700, 3300], "shots": [3000]}

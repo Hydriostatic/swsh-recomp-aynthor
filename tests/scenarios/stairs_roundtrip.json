@@ -1,0 +1,3 @@
+{"description": "Ground floor: up the stairs and back down (G4 black rug after arriving downstairs)",
+ "save": "build/scenario-saves/groundfloor", "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8,2720:STICK_UP:40,2900:STICK_RIGHT:8,2915:STICK_DOWN:15",
+ "exit_at": 3300, "measure": [3000, 3300], "shots": [2945, 2950, 2960, 2980, 3000, 3100, 3290]}

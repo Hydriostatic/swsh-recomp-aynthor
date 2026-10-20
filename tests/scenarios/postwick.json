@@ -1,0 +1,2 @@
+{"description": "Outdoors: from the front door, walk down into Postwick", "save": "build/scenario-saves/frontdoor",
+ "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8,2720:STICK_DOWN:300,3030:STICK_LEFT:120", "exit_at": 3300, "measure": [2750, 3300], "shots": [2900, 3150]}

@@ -1,0 +1,12 @@
+{"scenario": "stairs", "profile": "1440p30", "cache": "warm",
+ "checks": [
+  {"id": "G2-snapshot-upright", "bug": "G2", "type": "upright", "a": 2732, "b": 2735, "min": 0.3,
+   "why": "the scene-change snapshot (copy with MIRROR_Y) is drawn back the right way up"},
+  {"id": "G2-snapshot-upright-late", "bug": "G2", "type": "upright", "a": 2732, "b": 2737, "min": 0.3},
+  {"id": "G4-rug-not-black", "bug": "G4", "type": "black_fraction_max", "frame": 2757,
+   "region": [0.08, 0.83, 0.35, 0.97], "max": 0.2, "expect": "fail",
+   "why": "the orange rug at the foot of the stairs is drawn black right after arriving downstairs"},
+  {"id": "no-crash", "type": "status_ok"},
+  {"id": "SKIP-window", "bug": "SKIP", "type": "skipped_window_max", "max": 0, "expect": "fail",
+   "why": "draws skipped while their shader / pipeline compiles (after the stairs)"}
+ ]}

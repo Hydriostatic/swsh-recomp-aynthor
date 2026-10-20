@@ -1,0 +1,15 @@
+{
+ "checks": {},
+ "benchmarks": {},
+ "not_tested": [
+  "Pokémon Shield (sem dump do jogo)",
+  "Wild Area",
+  "batalhas",
+  "Dynamax",
+  "clima",
+  "ciclo dia/noite",
+  "menus e inventário",
+  "cinematics",
+  "sessões longas"
+ ]
+}

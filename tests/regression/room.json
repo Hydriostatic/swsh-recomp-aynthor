@@ -1,0 +1,6 @@
+{"scenario": "room", "profile": "1440p30", "cache": "warm",
+ "checks": [
+  {"id": "no-crash", "type": "status_ok"},
+  {"id": "room-not-black", "type": "luma_min", "frame": 3000, "region": [0, 0, 1, 1], "min": 40},
+  {"id": "SKIP-window", "bug": "SKIP", "type": "skipped_window_max", "max": 0}
+ ]}

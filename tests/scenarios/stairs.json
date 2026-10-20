@@ -1,0 +1,3 @@
+{"description": "Down the house stairs: scene-change snapshot (G2 regression, upside-down frames 2733-2739)",
+ "save": "build/scenario-saves/stairs", "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8,2720:STICK_RIGHT:8,2735:STICK_DOWN:200", "exit_at": 2900,
+ "measure": [2780, 2900], "shots": [2732, 2735, 2737, 2757, 2800]}
