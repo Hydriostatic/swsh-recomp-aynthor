@@ -1,6 +1,6 @@
-# Ciclo 3 (interrompido): mundo aberto a 60 fps
+# Ciclo 3 (concluído): mundo aberto a 60 fps
 
-Relatório completo: `reports/cycles/003.md`. Parado em 20/10/2026 ~08:15 porque o usuário precisou usar o PC.
+Relatório completo: `reports/cycles/003.md`. Parado às 08:15 e retomado às 12:20 de 20/10/2026.
 
 ## Estado do código
 Tudo commitado: `2016be2` (FP via MXCSR), `8a642f1` (cópias inline + readbacks adiados), `e2ef82f` (RT_PROF + sampler),
