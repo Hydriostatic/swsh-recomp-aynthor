@@ -268,7 +268,8 @@
    "status": "open",
    "attempts": 0,
    "max_attempts": 6,
-   "stalls": 0
+   "stalls": 0,
+   "note": "codigo pronto (nao compilado ate o fim da baseline DoD): CMD_SET_DEPTH_CLAMP -> PipeKey.depth_clamp -> depthClampEnable"
   },
   {
    "id": "DIFFTEST",
@@ -291,6 +292,30 @@
      "note": "tests/runtime/difftest/difftest.py (9098f9c)"
     }
    ]
+  },
+  {
+   "id": "ALPHATEST",
+   "priority": "P1",
+   "order": 5.5,
+   "title": "Alpha test do NVN ignorado: nvnColorStateSetAlphaTest guarda a funcao (color_state[2]) e CMD_SET_ALPHA_REF e gravado, mas o draw nao usa nenhum dos dois (SkyRecomp implementa por discard)",
+   "repro": "medir quantos draws ligam o alpha test (contador na linha [vk])",
+   "regression": "a definir conforme o uso",
+   "status": "open",
+   "attempts": 0,
+   "max_attempts": 6,
+   "stalls": 0
+  },
+  {
+   "id": "PRESENT-SYNC",
+   "priority": "P2",
+   "order": 6.7,
+   "title": "SYNC-HAZARD-PRESENT-AFTER-WRITE na validacao de sincronizacao (present apos transicao de layout)",
+   "repro": "--validation sync",
+   "regression": "vkval sync sem ERROR",
+   "status": "open",
+   "attempts": 0,
+   "max_attempts": 6,
+   "stalls": 0
   }
  ]
 }

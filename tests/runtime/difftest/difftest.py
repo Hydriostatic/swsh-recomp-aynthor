@@ -27,6 +27,7 @@ from lifter import Lifter, Unsupported, is_ldst  # noqa: E402
 from nso import Nso  # noqa: E402
 
 BASE = 0x7000000000  # main's load address (runtime: module 0)
+MEM_BASE, MEM_SIZE = 0x7200200000, 0x4000  # --memory: the data the base register points into (same address both sides)
 OUT = os.path.join(ROOT, "build", "difftest")
 MSYS = r"C:\msys64\ucrt64\bin"
 EDGE64 = [0, 1, 2, 0x7FFFFFFFFFFFFFFF, 0x8000000000000000, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF, 0x80000000, 0x7FFFFFFF,
@@ -43,7 +44,7 @@ def shape(w):
     return ("i", w >> 21, (w >> 10) & 0x3F if (w >> 24) & 0x1F in (0x0A, 0x0B, 0x1A, 0x1B) else 0)
 
 
-def sample(module, per_shape, max_cases, only):
+def sample(module, per_shape, max_cases, only, memory=False):
     n = Nso(os.path.join(ROOT, "extracted-132", "exefs", module))
     off, size = n.text
     lifter = Lifter(BASE, simd="c")
@@ -52,8 +53,10 @@ def sample(module, per_shape, max_cases, only):
     pcs = [BASE + off] if only else range(BASE + off, BASE + off + size, 4)
     for pc in pcs:
         w = words[0] if words else struct.unpack_from("<I", n.image, pc - BASE)[0]
-        if w == 0 or is_ldst(w):
+        if w == 0 or is_ldst(w) != memory:
             continue
+        if memory and (w & 0x3F000000) == 0x08000000:
+            continue  # (load / store exclusive: the monitor state differs by design between the two)
         k = shape(w)
         if not only and seen.get(k, 0) >= per_shape:
             continue
@@ -61,8 +64,10 @@ def sample(module, per_shape, max_cases, only):
             insn = lifter.lift(w, pc)
         except (Unsupported, Exception):
             continue
-        if insn.kind != "op" or not insn.code or "rt_" in insn.code or "u64u" in insn.code or "u32u" in insn.code:
-            continue  # (straight-line, no memory, no runtime calls)
+        if insn.kind != "op" or not insn.code or "rt_" in insn.code:
+            continue  # (straight-line, no runtime calls)
+        if not memory and ("u64u" in insn.code or "u32u" in insn.code or "u16u" in insn.code or "u8a" in insn.code):
+            continue
         seen[k] = seen.get(k, 0) + 1
         cases.append((w, pc, insn.code))
         if len(cases) >= max_cases:
@@ -70,9 +75,19 @@ def sample(module, per_shape, max_cases, only):
     return cases
 
 
-def rand_state(rnd):
+def rand_state(rnd, w=0, memory=False):
     x = [rnd.choice(EDGE64) if rnd.random() < 0.25 else rnd.getrandbits(64) for _ in range(31)]
     sp = (0x7200100000 + rnd.getrandbits(12) * 16)
+    seed = rnd.getrandbits(64) | 1
+    if memory:  # base register inside the data region (offsets up to +-4 KB stay in it), index register small
+        rn, rm = (w >> 5) & 31, (w >> 16) & 31
+        ptr = MEM_BASE + MEM_SIZE // 2 + rnd.randrange(-64, 64) * 16
+        if rn == 31:
+            sp = ptr
+        else:
+            x[rn] = ptr
+        if rm != rn and rm != 31:
+            x[rm] = rnd.randrange(0, 256)
     nzcv = rnd.getrandbits(4) << 28
     v = []
     for _ in range(32):
@@ -85,16 +100,33 @@ def rand_state(rnd):
             v.append(sum(struct.unpack("<I", struct.pack("<f", rnd.uniform(-1e3, 1e3)))[0] << (32 * i) for i in range(4)))
         else:
             v.append(rnd.getrandbits(128))
-    return x, sp, nzcv, v
+    return x, sp, nzcv, v, seed
 
 
 def pack(st):
-    x, sp, nzcv, v = st
+    x, sp, nzcv, v, seed = st
     return struct.pack("<31Q", *x) + struct.pack("<QQ", sp, nzcv) + b"".join(
-        struct.pack("<QQ", e & (2**64 - 1), e >> 64) for e in v)
+        struct.pack("<QQ", e & (2**64 - 1), e >> 64) for e in v) + struct.pack("<Q", seed)
 
 
-STATE_BYTES = 31 * 8 + 16 + 32 * 16
+STATE_BYTES = 31 * 8 + 16 + 32 * 16 + 8  # (+ the memory seed in, the memory hash out)
+M64 = 2**64 - 1
+
+
+def mem_fill(seed):  # xorshift64*, the same in the C harness
+    out = bytearray()
+    x = seed
+    for _ in range(MEM_SIZE // 8):
+        x ^= x >> 12; x ^= (x << 25) & M64; x ^= x >> 27
+        out += struct.pack("<Q", (x * 0x2545F4914F6CDD1D) & M64)
+    return bytes(out)
+
+
+def mem_hash(b):
+    h = 0xcbf29ce484222325
+    for byte in b:
+        h = ((h ^ byte) * 0x100000001B3) & M64
+    return h
 
 
 def unpack(b):
@@ -104,7 +136,7 @@ def unpack(b):
     for i in range(32):
         lo, hi = struct.unpack_from("<QQ", b, 264 + 16 * i)
         v.append(lo | (hi << 64))
-    return x, sp, nzcv, v
+    return x, sp, nzcv, v, struct.unpack_from("<Q", b, 264 + 512)[0]
 
 
 def gen_c(cases, path):
@@ -119,8 +151,14 @@ def gen_c(cases, path):
         f.write(",".join(f"case_{i}" for i in range(len(cases))))
         f.write("};\n")
         f.write(r'''
-// stdin: [u32 case][state] records; stdout: the state after the case, same layout (x0-x30, sp, nzcv, v0-v31)
+// stdin: [u32 case][state][u64 memory seed] records; stdout: the state after the case, same layout, then the FNV-1a hash
+// of the data region (filled from the seed with xorshift64* before the case, at the guest address the registers use)
+#include <windows.h>
+#define MEM_BASE 0x%xULL
+#define MEM_SIZE 0x%x
 int main(void) {
+    unsigned char *mem = VirtualAlloc((void *)MEM_BASE, MEM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (mem != (unsigned char *)MEM_BASE) return 3;
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
     unsigned char in[4 + %d];
@@ -132,26 +170,36 @@ int main(void) {
         memcpy(&c.sp, in + 4 + 248, 8);
         memcpy(&c.nzcv, in + 4 + 256, 8);
         memcpy(c.v, in + 4 + 264, 32 * 16);
+        uint64_t x; memcpy(&x, in + 4 + 264 + 512, 8);
+        for (int i = 0; i < MEM_SIZE / 8; i++) {
+            x ^= x >> 12; x ^= x << 25; x ^= x >> 27;
+            uint64_t v = x * 0x2545F4914F6CDD1DULL; memcpy(mem + 8 * i, &v, 8);
+        }
         cases[k](&c);
+        uint64_t h = 0xcbf29ce484222325ULL;
+        for (int i = 0; i < MEM_SIZE; i++) h = (h ^ mem[i]) * 0x100000001B3ULL;
         fwrite(c.x, 31 * 8, 1, stdout);
         fwrite(&c.sp, 8, 1, stdout);
         fwrite(&c.nzcv, 8, 1, stdout);
         fwrite(c.v, 32 * 16, 1, stdout);
+        fwrite(&h, 8, 1, stdout);
     }
     return 0;
 }
-''' % STATE_BYTES)
+''' % (MEM_BASE, MEM_SIZE, STATE_BYTES))
 
 
 def unicorn_run(w, pc, st):
     from unicorn import Uc, UC_ARCH_ARM64, UC_MODE_ARM
     from unicorn import arm64_const as A
-    x, sp, nzcv, v = st
+    x, sp, nzcv, v, seed = st
     uc = Uc(UC_ARCH_ARM64, UC_MODE_ARM)
     page = pc & ~0xFFF
     uc.mem_map(page, 0x1000)
     uc.mem_write(pc, struct.pack("<I", w))
     uc.mem_map(0x7200000000, 0x200000)  # (the stack the states' sp points into)
+    uc.mem_map(MEM_BASE, MEM_SIZE)
+    uc.mem_write(MEM_BASE, mem_fill(seed))
     # FP/SIMD on: CPACR_EL1.FPEN = 0b11
     uc.reg_write(A.UC_ARM64_REG_CPACR_EL1, 0x300000)
     for i in range(29):
@@ -166,7 +214,7 @@ def unicorn_run(w, pc, st):
     uc.emu_start(pc, pc + 4, count=1)
     ox = [uc.reg_read(A.UC_ARM64_REG_X0 + i) for i in range(29)] + [uc.reg_read(A.UC_ARM64_REG_X29), uc.reg_read(A.UC_ARM64_REG_X30)]
     return ox, uc.reg_read(A.UC_ARM64_REG_SP), uc.reg_read(A.UC_ARM64_REG_NZCV) & 0xF0000000, \
-        [uc.reg_read(A.UC_ARM64_REG_Q0 + i) for i in range(32)]
+        [uc.reg_read(A.UC_ARM64_REG_Q0 + i) for i in range(32)], mem_hash(bytes(uc.mem_read(MEM_BASE, MEM_SIZE)))
 
 
 def disasm(w, pc):
@@ -188,9 +236,10 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--only", default="")
     ap.add_argument("--inject-mismatch", action="store_true", help="negative control: corrupt case 0 (must be reported)")
+    ap.add_argument("--memory", action="store_true", help="loads / stores (the base register points into a data region)")
     args = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    cases = sample(args.module, args.per_shape, args.max_cases, args.only)
+    cases = sample(args.module, args.per_shape, args.max_cases, args.only, args.memory)
     print(f"{len(cases)} instruction cases sampled from {args.module}", flush=True)
     if args.inject_mismatch and cases:
         w, pc, code = cases[0]
@@ -207,7 +256,7 @@ def main():
     states, blob = [], bytearray()
     for k in range(len(cases)):
         for _ in range(args.states):
-            st = rand_state(rnd)
+            st = rand_state(rnd, cases[k][0], args.memory)
             states.append((k, st))
             blob += struct.pack("<I", k) + pack(st)
     out = subprocess.run([exe], input=bytes(blob), capture_output=True, env=env).stdout
@@ -234,6 +283,8 @@ def main():
         for r_ in range(32):
             if got[3][r_] != ref[3][r_]:
                 diffs.append(f"v{r_} {got[3][r_]:#034x} != {ref[3][r_]:#034x}")
+        if got[4] != ref[4]:
+            diffs.append("memory differs")
         if diffs:
             bad.setdefault(k, []).append("; ".join(diffs[:4]))
     unicorn_only = sum(1 for k in bad if all(m.startswith("unicorn:") for m in bad[k]))
