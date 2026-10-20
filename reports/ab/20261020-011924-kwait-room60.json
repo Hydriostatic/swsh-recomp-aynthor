@@ -1,0 +1,153 @@
+{
+ "scenario": "room",
+ "profile": "1440p60",
+ "a": "build/ab/base/lasrecomp.exe",
+ "b": "build/v132/lasrecomp.exe",
+ "a_env": [],
+ "b_env": [],
+ "runs": {
+  "A": [
+   {
+    "run": "reports\\runs\\room\\20261020-010800-ab-kwait-room60-A-1",
+    "status": "OK",
+    "skipped_total": 1405,
+    "presents": 1200,
+    "mean_ms": 17.032,
+    "fps_mean": 58.71,
+    "median_ms": 16.645,
+    "p95_ms": 17.706,
+    "p99_ms": 18.807,
+    "p999_ms": 21.923,
+    "max_ms": 469.926,
+    "fps_1pct_low": 53.17,
+    "fps_01pct_low": 45.61,
+    "over_20ms": 3,
+    "over_33ms": 1,
+    "over_50ms": 1
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-011148-ab-kwait-room60-A-1",
+    "status": "OK",
+    "skipped_total": 1365,
+    "presents": 1200,
+    "mean_ms": 17.145,
+    "fps_mean": 58.33,
+    "median_ms": 16.64,
+    "p95_ms": 17.439,
+    "p99_ms": 18.887,
+    "p999_ms": 75.813,
+    "max_ms": 520.133,
+    "fps_1pct_low": 52.95,
+    "fps_01pct_low": 13.19,
+    "over_20ms": 7,
+    "over_33ms": 3,
+    "over_50ms": 2
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-011536-ab-kwait-room60-A-1",
+    "status": "OK",
+    "skipped_total": 1292,
+    "presents": 1200,
+    "mean_ms": 17.045,
+    "fps_mean": 58.67,
+    "median_ms": 16.642,
+    "p95_ms": 17.165,
+    "p99_ms": 18.117,
+    "p999_ms": 19.423,
+    "max_ms": 483.757,
+    "fps_1pct_low": 55.2,
+    "fps_01pct_low": 51.49,
+    "over_20ms": 1,
+    "over_33ms": 1,
+    "over_50ms": 1
+   }
+  ],
+  "B": [
+   {
+    "run": "reports\\runs\\room\\20261020-010954-ab-kwait-room60-B-1",
+    "status": "OK",
+    "skipped_total": 1517,
+    "presents": 1200,
+    "mean_ms": 17.041,
+    "fps_mean": 58.68,
+    "median_ms": 16.656,
+    "p95_ms": 17.38,
+    "p99_ms": 18.578,
+    "p999_ms": 23.11,
+    "max_ms": 479.708,
+    "fps_1pct_low": 53.83,
+    "fps_01pct_low": 43.27,
+    "over_20ms": 6,
+    "over_33ms": 1,
+    "over_50ms": 1
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-011342-ab-kwait-room60-B-1",
+    "status": "OK",
+    "skipped_total": 1273,
+    "presents": 1200,
+    "mean_ms": 17.198,
+    "fps_mean": 58.14,
+    "median_ms": 16.648,
+    "p95_ms": 17.931,
+    "p99_ms": 21.511,
+    "p999_ms": 96.373,
+    "max_ms": 470.527,
+    "fps_1pct_low": 46.49,
+    "fps_01pct_low": 10.38,
+    "over_20ms": 17,
+    "over_33ms": 5,
+    "over_50ms": 3
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-011730-ab-kwait-room60-B-1",
+    "status": "OK",
+    "skipped_total": 1357,
+    "presents": 1200,
+    "mean_ms": 17.11,
+    "fps_mean": 58.45,
+    "median_ms": 16.643,
+    "p95_ms": 18.085,
+    "p99_ms": 21.415,
+    "p999_ms": 34.383,
+    "max_ms": 479.068,
+    "fps_1pct_low": 46.7,
+    "fps_01pct_low": 29.08,
+    "over_20ms": 21,
+    "over_33ms": 3,
+    "over_50ms": 1
+   }
+  ]
+ },
+ "when": "2026-10-20T01:19:24",
+ "aggregate": {
+  "A": {
+   "fps_mean": 58.67,
+   "mean_ms": 17.045,
+   "median_ms": 16.642,
+   "p95_ms": 17.439,
+   "p99_ms": 18.807,
+   "over_20ms": 3,
+   "over_50ms": 1,
+   "skipped_total": 1365
+  },
+  "B": {
+   "fps_mean": 58.45,
+   "mean_ms": 17.11,
+   "median_ms": 16.648,
+   "p95_ms": 17.931,
+   "p99_ms": 21.415,
+   "over_20ms": 17,
+   "over_50ms": 1,
+   "skipped_total": 1357
+  }
+ },
+ "ratio_mean_ms_B_over_A": [
+  0.9939,
+  1.0097
+ ],
+ "ratio_p99_B_over_A": [
+  0.9836,
+  1.1873
+ ]
+}

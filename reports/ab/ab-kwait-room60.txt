@@ -1,0 +1,37 @@
+A #1: OK fps 58.71 p95 17.706 p99 18.807 skipped 1405
+B #1: OK fps 58.68 p95 17.38 p99 18.578 skipped 1517
+A #2: OK fps 58.33 p95 17.439 p99 18.887 skipped 1365
+B #2: OK fps 58.14 p95 17.931 p99 21.511 skipped 1273
+A #3: OK fps 58.67 p95 17.165 p99 18.117 skipped 1292
+B #3: OK fps 58.45 p95 18.085 p99 21.415 skipped 1357
+{
+ "A": {
+  "fps_mean": 58.67,
+  "mean_ms": 17.045,
+  "median_ms": 16.642,
+  "p95_ms": 17.439,
+  "p99_ms": 18.807,
+  "over_20ms": 3,
+  "over_50ms": 1,
+  "skipped_total": 1365
+ },
+ "B": {
+  "fps_mean": 58.45,
+  "mean_ms": 17.11,
+  "median_ms": 16.648,
+  "p95_ms": 17.931,
+  "p99_ms": 21.415,
+  "over_20ms": 17,
+  "over_50ms": 1,
+  "skipped_total": 1357
+ },
+ "mean_ms B/A 95%": [
+  0.9939,
+  1.0097
+ ],
+ "p99 B/A 95%": [
+  0.9836,
+  1.1873
+ ]
+}
+reports\ab\20261020-011924-kwait-room60.json

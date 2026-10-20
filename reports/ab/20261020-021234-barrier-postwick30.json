@@ -1,0 +1,155 @@
+{
+ "scenario": "postwick",
+ "profile": "1440p30",
+ "a": "build/v132/lasrecomp.exe",
+ "b": "build/v132/lasrecomp.exe",
+ "a_env": [
+  "LARECOMP_NVN_BARRIER=0"
+ ],
+ "b_env": [],
+ "runs": {
+  "A": [
+   {
+    "run": "reports\\runs\\postwick\\20261020-020006-ab-barrier-postwick30-A-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 550,
+    "mean_ms": 36.48,
+    "fps_mean": 27.41,
+    "median_ms": 33.333,
+    "p95_ms": 37.16,
+    "p99_ms": 39.962,
+    "p999_ms": 935.588,
+    "max_ms": 935.588,
+    "fps_1pct_low": 25.02,
+    "fps_01pct_low": 1.07,
+    "over_20ms": 550,
+    "over_33ms": 266,
+    "over_50ms": 2
+   },
+   {
+    "run": "reports\\runs\\postwick\\20261020-020357-ab-barrier-postwick30-A-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 550,
+    "mean_ms": 37.864,
+    "fps_mean": 26.41,
+    "median_ms": 33.478,
+    "p95_ms": 39.845,
+    "p99_ms": 70.494,
+    "p999_ms": 1201.872,
+    "max_ms": 1201.872,
+    "fps_1pct_low": 14.19,
+    "fps_01pct_low": 0.83,
+    "over_20ms": 549,
+    "over_33ms": 283,
+    "over_50ms": 13
+   },
+   {
+    "run": "reports\\runs\\postwick\\20261020-020802-ab-barrier-postwick30-A-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 550,
+    "mean_ms": 44.825,
+    "fps_mean": 22.31,
+    "median_ms": 35.244,
+    "p95_ms": 55.723,
+    "p99_ms": 78.983,
+    "p999_ms": 1294.379,
+    "max_ms": 1294.379,
+    "fps_1pct_low": 12.66,
+    "fps_01pct_low": 0.77,
+    "over_20ms": 548,
+    "over_33ms": 372,
+    "over_50ms": 136
+   }
+  ],
+  "B": [
+   {
+    "run": "reports\\runs\\postwick\\20261020-020201-ab-barrier-postwick30-B-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 550,
+    "mean_ms": 36.475,
+    "fps_mean": 27.42,
+    "median_ms": 33.336,
+    "p95_ms": 35.915,
+    "p99_ms": 37.523,
+    "p999_ms": 948.696,
+    "max_ms": 948.696,
+    "fps_1pct_low": 26.65,
+    "fps_01pct_low": 1.05,
+    "over_20ms": 550,
+    "over_33ms": 255,
+    "over_50ms": 2
+   },
+   {
+    "run": "reports\\runs\\postwick\\20261020-020554-ab-barrier-postwick30-B-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 550,
+    "mean_ms": 37.259,
+    "fps_mean": 26.84,
+    "median_ms": 33.455,
+    "p95_ms": 41.335,
+    "p99_ms": 60.348,
+    "p999_ms": 930.594,
+    "max_ms": 930.594,
+    "fps_1pct_low": 16.57,
+    "fps_01pct_low": 1.07,
+    "over_20ms": 550,
+    "over_33ms": 283,
+    "over_50ms": 12
+   },
+   {
+    "run": "reports\\runs\\postwick\\20261020-021003-ab-barrier-postwick30-B-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 550,
+    "mean_ms": 47.537,
+    "fps_mean": 21.04,
+    "median_ms": 45.045,
+    "p95_ms": 58.379,
+    "p99_ms": 62.269,
+    "p999_ms": 958.578,
+    "max_ms": 958.578,
+    "fps_1pct_low": 16.06,
+    "fps_01pct_low": 1.04,
+    "over_20ms": 550,
+    "over_33ms": 456,
+    "over_50ms": 168
+   }
+  ]
+ },
+ "when": "2026-10-20T02:12:34",
+ "aggregate": {
+  "A": {
+   "fps_mean": 26.41,
+   "mean_ms": 37.864,
+   "median_ms": 33.478,
+   "p95_ms": 39.845,
+   "p99_ms": 70.494,
+   "over_20ms": 549,
+   "over_50ms": 13,
+   "skipped_total": 0
+  },
+  "B": {
+   "fps_mean": 26.84,
+   "mean_ms": 37.259,
+   "median_ms": 33.455,
+   "p95_ms": 41.335,
+   "p99_ms": 60.348,
+   "over_20ms": 550,
+   "over_50ms": 12,
+   "skipped_total": 0
+  }
+ },
+ "ratio_mean_ms_B_over_A": [
+  0.8137,
+  1.3031
+ ],
+ "ratio_p99_B_over_A": [
+  0.4751,
+  1.5582
+ ]
+}

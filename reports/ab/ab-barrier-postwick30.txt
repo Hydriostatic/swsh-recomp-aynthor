@@ -1,0 +1,37 @@
+A #1: OK fps 27.41 p95 37.16 p99 39.962 skipped 0
+B #1: OK fps 27.42 p95 35.915 p99 37.523 skipped 0
+A #2: OK fps 26.41 p95 39.845 p99 70.494 skipped 0
+B #2: OK fps 26.84 p95 41.335 p99 60.348 skipped 0
+A #3: OK fps 22.31 p95 55.723 p99 78.983 skipped 0
+B #3: OK fps 21.04 p95 58.379 p99 62.269 skipped 0
+{
+ "A": {
+  "fps_mean": 26.41,
+  "mean_ms": 37.864,
+  "median_ms": 33.478,
+  "p95_ms": 39.845,
+  "p99_ms": 70.494,
+  "over_20ms": 549,
+  "over_50ms": 13,
+  "skipped_total": 0
+ },
+ "B": {
+  "fps_mean": 26.84,
+  "mean_ms": 37.259,
+  "median_ms": 33.455,
+  "p95_ms": 41.335,
+  "p99_ms": 60.348,
+  "over_20ms": 550,
+  "over_50ms": 12,
+  "skipped_total": 0
+ },
+ "mean_ms B/A 95%": [
+  0.8137,
+  1.3031
+ ],
+ "p99 B/A 95%": [
+  0.4751,
+  1.5582
+ ]
+}
+reports\ab\20261020-021234-barrier-postwick30.json

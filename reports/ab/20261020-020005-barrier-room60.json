@@ -1,0 +1,155 @@
+{
+ "scenario": "room",
+ "profile": "1440p60",
+ "a": "build/v132/lasrecomp.exe",
+ "b": "build/v132/lasrecomp.exe",
+ "a_env": [
+  "LARECOMP_NVN_BARRIER=0"
+ ],
+ "b_env": [],
+ "runs": {
+  "A": [
+   {
+    "run": "reports\\runs\\room\\20261020-014840-ab-barrier-room60-A-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 1200,
+    "mean_ms": 17.047,
+    "fps_mean": 58.66,
+    "median_ms": 16.67,
+    "p95_ms": 17.84,
+    "p99_ms": 19.847,
+    "p999_ms": 23.887,
+    "max_ms": 486.77,
+    "fps_1pct_low": 50.38,
+    "fps_01pct_low": 41.86,
+    "over_20ms": 11,
+    "over_33ms": 1,
+    "over_50ms": 1
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-015229-ab-barrier-room60-A-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 1200,
+    "mean_ms": 17.033,
+    "fps_mean": 58.71,
+    "median_ms": 16.642,
+    "p95_ms": 17.358,
+    "p99_ms": 19.556,
+    "p999_ms": 26.719,
+    "max_ms": 471.269,
+    "fps_1pct_low": 51.13,
+    "fps_01pct_low": 37.43,
+    "over_20ms": 10,
+    "over_33ms": 1,
+    "over_50ms": 1
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-015617-ab-barrier-room60-A-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 1200,
+    "mean_ms": 17.043,
+    "fps_mean": 58.67,
+    "median_ms": 16.654,
+    "p95_ms": 17.194,
+    "p99_ms": 18.286,
+    "p999_ms": 32.372,
+    "max_ms": 484.468,
+    "fps_1pct_low": 54.69,
+    "fps_01pct_low": 30.89,
+    "over_20ms": 2,
+    "over_33ms": 1,
+    "over_50ms": 1
+   }
+  ],
+  "B": [
+   {
+    "run": "reports\\runs\\room\\20261020-015034-ab-barrier-room60-B-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 1200,
+    "mean_ms": 17.042,
+    "fps_mean": 58.68,
+    "median_ms": 16.668,
+    "p95_ms": 17.745,
+    "p99_ms": 19.112,
+    "p999_ms": 21.593,
+    "max_ms": 481.568,
+    "fps_1pct_low": 52.32,
+    "fps_01pct_low": 46.31,
+    "over_20ms": 4,
+    "over_33ms": 1,
+    "over_50ms": 1
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-015423-ab-barrier-room60-B-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 1200,
+    "mean_ms": 17.032,
+    "fps_mean": 58.71,
+    "median_ms": 16.64,
+    "p95_ms": 17.888,
+    "p99_ms": 19.698,
+    "p999_ms": 22.221,
+    "max_ms": 469.254,
+    "fps_1pct_low": 50.77,
+    "fps_01pct_low": 45.0,
+    "over_20ms": 8,
+    "over_33ms": 1,
+    "over_50ms": 1
+   },
+   {
+    "run": "reports\\runs\\room\\20261020-015811-ab-barrier-room60-B-1",
+    "status": "OK",
+    "skipped_total": 0,
+    "presents": 1200,
+    "mean_ms": 17.036,
+    "fps_mean": 58.7,
+    "median_ms": 16.658,
+    "p95_ms": 17.555,
+    "p99_ms": 18.558,
+    "p999_ms": 30.293,
+    "max_ms": 473.896,
+    "fps_1pct_low": 53.89,
+    "fps_01pct_low": 33.01,
+    "over_20ms": 2,
+    "over_33ms": 1,
+    "over_50ms": 1
+   }
+  ]
+ },
+ "when": "2026-10-20T02:00:05",
+ "aggregate": {
+  "A": {
+   "fps_mean": 58.67,
+   "mean_ms": 17.043,
+   "median_ms": 16.654,
+   "p95_ms": 17.358,
+   "p99_ms": 19.556,
+   "over_20ms": 10,
+   "over_50ms": 1,
+   "skipped_total": 0
+  },
+  "B": {
+   "fps_mean": 58.7,
+   "mean_ms": 17.036,
+   "median_ms": 16.658,
+   "p95_ms": 17.745,
+   "p99_ms": 19.112,
+   "over_20ms": 4,
+   "over_50ms": 1,
+   "skipped_total": 0
+  }
+ },
+ "ratio_mean_ms_B_over_A": [
+  0.9991,
+  1.0005
+ ],
+ "ratio_p99_B_over_A": [
+  0.9351,
+  1.0772
+ ]
+}

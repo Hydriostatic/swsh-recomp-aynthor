@@ -2,39 +2,39 @@
  "checks": {
   "stairs/G2-snapshot-upright": {
    "result": "PASSOU",
-   "value": 0.8,
+   "value": 0.808,
    "bug": "G2",
    "expected": "pass",
-   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
-   "when": "2026-10-20T02:33:47",
-   "commit": "ae25a4c"
+   "run": "reports\\runs\\stairs\\20261020-031854-regress-1",
+   "when": "2026-10-20T03:20:36",
+   "commit": "68ebe78"
   },
   "stairs/G2-snapshot-upright-late": {
    "result": "PASSOU",
-   "value": 0.799,
+   "value": 0.807,
    "bug": "G2",
    "expected": "pass",
-   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
-   "when": "2026-10-20T02:33:47",
-   "commit": "ae25a4c"
+   "run": "reports\\runs\\stairs\\20261020-031854-regress-1",
+   "when": "2026-10-20T03:20:36",
+   "commit": "68ebe78"
   },
   "stairs/G4-rug-not-black": {
    "result": "PASSOU",
    "value": 0.0,
    "bug": "G4",
-   "expected": "fail (open bug)",
-   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
-   "when": "2026-10-20T02:33:47",
-   "commit": "ae25a4c"
+   "expected": "pass",
+   "run": "reports\\runs\\stairs\\20261020-031854-regress-1",
+   "when": "2026-10-20T03:20:36",
+   "commit": "68ebe78"
   },
   "stairs/no-crash": {
    "result": "PASSOU",
    "value": "OK",
    "bug": "",
    "expected": "pass",
-   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
-   "when": "2026-10-20T02:33:47",
-   "commit": "ae25a4c"
+   "run": "reports\\runs\\stairs\\20261020-031854-regress-1",
+   "when": "2026-10-20T03:20:36",
+   "commit": "68ebe78"
   },
   "stairs/SKIP-window": {
    "result": "FALHOU",
@@ -49,37 +49,37 @@
    "result": "PASSOU",
    "value": 0,
    "bug": "SKIP",
-   "expected": "fail (open bug)",
-   "run": "reports\\runs\\stairs\\20261020-023204-regress-1",
-   "when": "2026-10-20T02:33:47",
-   "commit": "ae25a4c"
+   "expected": "pass",
+   "run": "reports\\runs\\stairs\\20261020-031854-regress-1",
+   "when": "2026-10-20T03:20:36",
+   "commit": "68ebe78"
   },
   "room/no-crash": {
    "result": "PASSOU",
    "value": "OK",
    "bug": "",
    "expected": "pass",
-   "run": "reports\\runs\\room\\20261020-023010-regress-1",
-   "when": "2026-10-20T02:32:04",
-   "commit": "ae25a4c"
+   "run": "reports\\runs\\room\\20261020-031700-regress-1",
+   "when": "2026-10-20T03:18:53",
+   "commit": "68ebe78"
   },
   "room/room-not-black": {
    "result": "PASSOU",
-   "value": 123.0,
+   "value": 125.4,
    "bug": "",
    "expected": "pass",
-   "run": "reports\\runs\\room\\20261020-023010-regress-1",
-   "when": "2026-10-20T02:32:04",
-   "commit": "ae25a4c"
+   "run": "reports\\runs\\room\\20261020-031700-regress-1",
+   "when": "2026-10-20T03:18:53",
+   "commit": "68ebe78"
   },
   "room/SKIP-total": {
    "result": "PASSOU",
    "value": 0,
    "bug": "SKIP",
-   "expected": "fail (open bug)",
-   "run": "reports\\runs\\room\\20261020-023010-regress-1",
-   "when": "2026-10-20T02:32:04",
-   "commit": "ae25a4c"
+   "expected": "pass",
+   "run": "reports\\runs\\room\\20261020-031700-regress-1",
+   "when": "2026-10-20T03:18:53",
+   "commit": "68ebe78"
   }
  },
  "benchmarks": {},

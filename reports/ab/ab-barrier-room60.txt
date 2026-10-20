@@ -1,0 +1,37 @@
+A #1: OK fps 58.66 p95 17.84 p99 19.847 skipped 0
+B #1: OK fps 58.68 p95 17.745 p99 19.112 skipped 0
+A #2: OK fps 58.71 p95 17.358 p99 19.556 skipped 0
+B #2: OK fps 58.71 p95 17.888 p99 19.698 skipped 0
+A #3: OK fps 58.67 p95 17.194 p99 18.286 skipped 0
+B #3: OK fps 58.7 p95 17.555 p99 18.558 skipped 0
+{
+ "A": {
+  "fps_mean": 58.67,
+  "mean_ms": 17.043,
+  "median_ms": 16.654,
+  "p95_ms": 17.358,
+  "p99_ms": 19.556,
+  "over_20ms": 10,
+  "over_50ms": 1,
+  "skipped_total": 0
+ },
+ "B": {
+  "fps_mean": 58.7,
+  "mean_ms": 17.036,
+  "median_ms": 16.658,
+  "p95_ms": 17.745,
+  "p99_ms": 19.112,
+  "over_20ms": 4,
+  "over_50ms": 1,
+  "skipped_total": 0
+ },
+ "mean_ms B/A 95%": [
+  0.9991,
+  1.0005
+ ],
+ "p99 B/A 95%": [
+  0.9351,
+  1.0772
+ ]
+}
+reports\ab\20261020-020005-barrier-room60.json
