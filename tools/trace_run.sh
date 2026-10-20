@@ -16,8 +16,11 @@ IN="400:A:6,500:A:6,1150:A:6,1300:A:6,1400:STICK_LEFT:300,1700:STICK_DOWN:120,18
     for kv in "$@"; do export "$kv"; done
     exec ./build/trace/lasrecomp.exe extracted --play > "logs/repro-$name.log" 2>&1
 ) &
+pid=$!
 for _ in $(seq 1 900); do [ -f "$(printf 'build/frames/frame_%05d.png' "$last")" ] && break; sleep 1; done
 sleep 2
-taskkill //F //IM lasrecomp.exe >/dev/null 2>&1
+# (only this run: killing by image name, taskkill /IM lasrecomp.exe, ends every runtime on the machine - other
+# test runs and the player's game - with exit code 1)
+w=$(cat /proc/$pid/winpid 2>/dev/null); [ -n "$w" ] && taskkill //F //T //PID "$w" >/dev/null 2>&1; wait "$pid" 2>/dev/null
 mkdir -p "build/repro/$name"; cp build/frames/*.png "build/repro/$name/" 2>/dev/null
 ls "build/repro/$name" | head -20
