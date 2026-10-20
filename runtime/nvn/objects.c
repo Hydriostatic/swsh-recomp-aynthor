@@ -638,6 +638,22 @@ static void set_shaders(Cpu *c, int stride) {
         p->stages[stage].const_offset = *(const uint32_t *)(control + 0x700);
         p->stages[stage].const_size = *(const uint32_t *)(control + 0x6FC);
         p->stage_mask |= 1u << stage;
+        {   // the blob's content hash (header, code, then the constants at the end), for the pipeline recipes
+            // control + 0x704: the whole code block's size (SuperMarioWonderRecomp nvn_shaders.h, MIT); without it the
+            // constants' end, which is 0 for a stage without constants
+            uint32_t size = *(const uint32_t *)(control + 0x704);
+            if (!size || size > (16u << 20))
+                size = p->stages[stage].const_offset ? p->stages[stage].const_offset + p->stages[stage].const_size : 0;
+            uint64_t h = 0;
+            if (size && size <= (16u << 20)) {
+                h = 0xcbf29ce484222325ull;
+                const uint8_t *b = (const uint8_t *)(uintptr_t)code;
+                for (uint32_t k = 0; k < size; k++) h = (h ^ b[k]) * 0x100000001B3ull;
+                if (!h) h = 1;
+                renderer_stage_seen(h, code, p->stages[stage].const_offset, size);
+            }
+            p->stages[stage].content_hash = h;
+        }
     }
     RET(1);
 }

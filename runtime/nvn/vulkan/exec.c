@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -20,6 +21,8 @@
 static uint64_t g_draws_total;  // (never reset: LARECOMP_COUNTER_LOG)
 static void watch_tex(NvnTexture *t, const char *what, const NvnTexture *from);  // (LARECOMP_WATCH_TEX, below)
 static uint64_t stat_draws, stat_skipped, stat_passes, stat_dispatches, stat_wait_ns, stat_flushes, stat_feedback_copies;
+static uint64_t stat_nvn_barriers, stat_barrier_bits[0x200];  // nvnCommandBufferBarrier: applied (nonzero), and per bit value
+static uint64_t stat_holds, stat_hold_ns, stat_hold_max_ns, stat_hold_claims, stat_hold_timeouts;  // (wait_built)
 // Skipped draws by reason (logged with the stats): 0 no program bound, 1 program still compiling, 2 program failed,
 // 3 no program object, 4 primitive mode, 5 pipeline still building, 6 pipeline failed.
 static uint64_t stat_skip_why[8];
@@ -47,7 +50,7 @@ static _Atomic int new_pipes;  // pipelines created since the pipeline cache was
 static uint64_t op_counts[CMD_COUNT];
 static uint64_t stat_vtx_copied, stat_vtx_direct;  // vertex / index ranges of the draws: copied to VRAM / read in place
 bool g_debug_frame;
-static char stats_text[1024];
+static char stats_text[2048];
 void vk_collect_dead(void);
 
 // ================================================================== submissions
@@ -587,10 +590,12 @@ copy:;
 }
 
 // ================================================================== worker threads (shader / pipeline builds)
-// First-use compiles run off the render thread; draws needing them are skipped until ready (as on Metal).
+// First-use compiles run off the render thread. Two queues: the jobs a draw asked for, then the prewarm's (pipeline
+// recipes, below): a worker takes from the first while it has any. A draw that needs a job nobody has started yet
+// takes it out of the queue and runs it itself (job_claim) instead of waiting behind the others (mk8-recomp's "claim").
 // LARECOMP_SYNC_SHADERS=1 builds on first use, blocking (deterministic tests).
 typedef struct Job { void (*fn)(void *); void *arg; struct Job *next; } Job;
-static Job *jobs_head, *jobs_tail;
+static Job *jobs_head, *jobs_tail, *low_head, *low_tail;
 static pthread_mutex_t jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t jobs_cond = PTHREAD_COND_INITIALIZER;
 
@@ -598,10 +603,10 @@ static void *worker(void *a) {
     (void)a;
     for (;;) {
         pthread_mutex_lock(&jobs_lock);
-        while (!jobs_head) pthread_cond_wait(&jobs_cond, &jobs_lock);
-        Job *j = jobs_head;
-        jobs_head = j->next;
-        if (!jobs_head) jobs_tail = NULL;
+        while (!jobs_head && !low_head) pthread_cond_wait(&jobs_cond, &jobs_lock);
+        Job *j;
+        if (jobs_head) { j = jobs_head; jobs_head = j->next; if (!jobs_head) jobs_tail = NULL; }
+        else { j = low_head; low_head = j->next; if (!low_head) low_tail = NULL; }
         pthread_mutex_unlock(&jobs_lock);
         j->fn(j->arg);
         free(j);
@@ -618,7 +623,7 @@ static bool sync_shaders(void) {
 // Shader translation runs on the workers too, then compiles on the same worker (translate_program). It had one
 // dedicated thread (the translator used a static string ring, now per thread): on a first visit, ~380 programs took
 // ~240 ms one after another while the workers idled. Off the game thread either way (up to ~90 ms per frame there).
-static void run_job(void (*fn)(void *), void *arg) {
+static void queue_job(void (*fn)(void *), void *arg, bool low) {
     if (sync_shaders()) { fn(arg); return; }
     static bool started;
     if (!started) {
@@ -632,10 +637,33 @@ static void run_job(void (*fn)(void *), void *arg) {
     Job *j = malloc(sizeof *j);
     j->fn = fn; j->arg = arg; j->next = NULL;
     pthread_mutex_lock(&jobs_lock);
-    if (jobs_tail) jobs_tail->next = j; else jobs_head = j;
-    jobs_tail = j;
+    Job **head = low ? &low_head : &jobs_head, **tail = low ? &low_tail : &jobs_tail;
+    if (*tail) (*tail)->next = j; else *head = j;
+    *tail = j;
     pthread_cond_signal(&jobs_cond);
     pthread_mutex_unlock(&jobs_lock);
+}
+static void run_job(void (*fn)(void *), void *arg) { queue_job(fn, arg, false); }
+static void run_job_low(void (*fn)(void *), void *arg) { queue_job(fn, arg, true); }
+static bool wait_built(_Atomic int *state, void (*fn)(void *), void *arg);  // (draws and dispatches: below)
+
+// Takes the job (fn, arg) out of either queue if no worker has started it: the caller then runs it itself.
+static bool job_claim(void (*fn)(void *), void *arg) {
+    bool found = false;
+    pthread_mutex_lock(&jobs_lock);
+    for (int q = 0; q < 2 && !found; q++) {
+        Job **head = q ? &low_head : &jobs_head, **tail = q ? &low_tail : &jobs_tail, *prev = NULL;
+        for (Job *j = *head; j; prev = j, j = j->next) {
+            if (j->fn != fn || j->arg != arg) continue;
+            if (prev) prev->next = j->next; else *head = j->next;
+            if (*tail == j) *tail = prev;
+            free(j);
+            found = true;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&jobs_lock);
+    return found;
 }
 
 // ================================================================== state
@@ -777,6 +805,29 @@ const char *renderer_stats(void) {
     if (g_skin_watch) {
         const uint32_t *w = (const uint32_t *)(uintptr_t)g_skin_watch;
         LOG("[skin] cb3 %llx now: row8 %08x %08x row9 %08x %08x\n", (unsigned long long)g_skin_watch, w[32], w[33], w[36], w[37]);
+    }
+    {   // NVN barriers since the last line: how many were applied, and the bit values seen (NVNbarrierBits:
+        // 1 ORDER_PRIMITIVES, 2 ORDER_FRAGMENTS, 4 ORDER_FRAGMENTS_TILED, 8 ORDER_INDIRECT_DATA, 0x10 INVALIDATE_TEXTURE,
+        // 0x20 INVALIDATE_SHADER, 0x40 INVALIDATE_TEXTURE_DESCRIPTOR, 0x80 INVALIDATE_ZCULL, 0x100 INVALIDATE_L2_CACHE)
+        size_t n = strlen(stats_text);
+        n += snprintf(stats_text + n, sizeof stats_text - n, " | nvn barriers %llu [", (unsigned long long)stat_nvn_barriers);
+        for (int b = 0; b < 0x200 && n < sizeof stats_text - 32; b++)
+            if (stat_barrier_bits[b]) n += snprintf(stats_text + n, sizeof stats_text - n, " %#x:%llu", b, (unsigned long long)stat_barrier_bits[b]);
+        snprintf(stats_text + n, sizeof stats_text - n, " ]");
+        stat_nvn_barriers = 0;
+        memset(stat_barrier_bits, 0, sizeof stat_barrier_bits);
+    }
+    {   // pipeline recipes (prewarm): loaded, programs and pipelines prewarmed, pipelines a draw adopted, new recipes
+        extern void recipes_stats(char *out, size_t n);
+        size_t n = strlen(stats_text);
+        recipes_stats(stats_text + n, sizeof stats_text - n);
+    }
+    if (stat_holds) {  // draws that waited for their program / pipeline (wait_built)
+        size_t n = strlen(stats_text);
+        snprintf(stats_text + n, sizeof stats_text - n, " | holds %llu (%.0fms, max %.1fms, claimed %llu, timeouts %llu)",
+                 (unsigned long long)stat_holds, stat_hold_ns / 1e6, stat_hold_max_ns / 1e6, (unsigned long long)stat_hold_claims,
+                 (unsigned long long)stat_hold_timeouts);
+        stat_holds = stat_hold_ns = stat_hold_max_ns = stat_hold_claims = stat_hold_timeouts = 0;
     }
     {   // validation layer messages so far (LARECOMP_VK_VALIDATION=1, device.c)
         extern atomic_uint g_vkval_errors, g_vkval_warnings;
@@ -1180,6 +1231,7 @@ typedef struct {
     VkDescriptorSetLayout set_layout[2];
     VkPipelineLayout layout;
     bool vs_uses_vid;
+    uint64_t chash[2];  // the stages' content hashes (NvnShaderStage.content_hash; 0 unknown): pipeline recipes
     _Atomic int state;  // 0 building, 1 ready, 2 failed
 } Prog;
 
@@ -1377,7 +1429,9 @@ static void bind_program_stages(NvnProgram *p, uint32_t mask) {
     st.program = &g_comb_prog;
 }
 
-static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
+static Prog *get_program_q(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey, bool prewarm);
+static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) { return get_program_q(np, vkey, fkey, false); }
+static Prog *get_program_q(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey, bool prewarm) {
     // A vertex shader without a fragment shader (Let's Go's depth / shadow passes: stages 0x1) gets an empty fragment
     // shader in translate_program - no color output, only depth, as the hardware does. They were all skipped.
     if (!(np->stage_mask & 1)) {
@@ -1389,7 +1443,14 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
         return NULL;
     }
     uint64_t h = 0xcbf29ce484222325ull;
-    for (int i = 0; i < 2; i++) { uint64_t a = np->stages[i].code_addr; for (int k = 0; k < 8; k++) { h ^= (a >> (k * 8)) & 0xFF; h *= 0x100000001B3ull; } }
+    // The stages by content when their hashes are known (the game holds byte-identical shaders at several addresses:
+    // 531 of 649 pipelines in one run were such copies, each translated and built again), else by address.
+    bool by_content = np->stages[0].content_hash && (np->stages[1].content_hash || !(np->stage_mask & 2));
+    for (int i = 0; i < 2; i++) {
+        uint64_t a = by_content ? np->stages[i].content_hash : np->stages[i].code_addr;
+        for (int k = 0; k < 8; k++) { h ^= (a >> (k * 8)) & 0xFF; h *= 0x100000001B3ull; }
+    }
+    h ^= by_content;
     const uint8_t *vb = (const uint8_t *)vkey;
     for (size_t i = 0; i < sizeof *vkey; i++) { h ^= vb[i]; h *= 0x100000001B3ull; }
     for (int i = 0; i < 8; i++) { h ^= fkey->rt_kind[i]; h *= 0x100000001B3ull; }
@@ -1406,7 +1467,10 @@ static Prog *get_program(NvnProgram *np, ShaderKey *vkey, ShaderKey *fkey) {
     }
     p->vkey = *vkey;
     p->fkey = *fkey;
-    run_job(translate_program, p);
+    p->chash[0] = np->stages[0].content_hash;
+    p->chash[1] = np->stages[1].content_hash;
+    if (prewarm) run_job_low(translate_program, p);
+    else run_job(translate_program, p);
     return p;
 }
 
@@ -1599,7 +1663,7 @@ typedef struct {
     uint32_t write_mask[8];
 } PipeKey;
 
-typedef struct { PipeKey k; uint64_t hash; VkPipeline pipe; _Atomic int state; } Pipe;  // state: 0 building, 1 ready, 2 failed
+typedef struct { PipeKey k; uint64_t hash; VkPipeline pipe; _Atomic int state; bool prewarmed, drawn; } Pipe;  // state: 0 building, 1 ready, 2 failed
 #define PIPE_TAB 8192
 static struct { uint64_t key; Pipe *pipe; } pipe_tab[PIPE_TAB];
 
@@ -2261,9 +2325,12 @@ static CsProg *compute_program(NvnProgram *np) {
     if (!ss->code_addr) return NULL;
     struct CsEnt *tab = g_cs_tab;
     int n = g_cs_n;
-    for (int i = 0; i < n; i++) if (tab[i].addr == ss->code_addr) return tab[i].cp;
+    // keyed by content when known: the game reuses its shader memory between areas, and a key by address returned the
+    // translation of the shader that was there before (G4, the black rug: the same bug in the graphics programs)
+    uint64_t key = ss->content_hash ? ss->content_hash : ss->code_addr;
+    for (int i = 0; i < n; i++) if (tab[i].addr == key) return tab[i].cp;
     CsProg *cp = calloc(1, sizeof *cp);
-    if (n < 256) { tab[n].addr = ss->code_addr; tab[n].cp = cp; g_cs_n = n + 1; }
+    if (n < 256) { tab[n].addr = key; tab[n].cp = cp; g_cs_n = n + 1; }
     maxwell_gmem_base = HEAP_BASE;
     maxwell_gmem_size = HEAP_MAX;
     ShaderKey k = {0};
@@ -2288,6 +2355,7 @@ static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
     snap_reason = "compute"; snapshots_invalidate(NULL);
     if (!st.program || !gx || !gy || !gz) return;
     CsProg *cp = compute_program(st.program);
+    if (cp) wait_built(&cp->p.state, build_compute, cp);  // (a skipped dispatch leaves its results missing: hold as draws do)
     if (!cp || atomic_load(&cp->p.state) != 1) { stat_skipped++; return; }
     vk_end_pass();
     VkCommandBuffer cb = vk_cmd();
@@ -2363,26 +2431,326 @@ static void draw(CmdRec *r, bool indexed) {
     n++;
     st.rt_dirty = true;  // (begin_pass again before the next draw; the target is loaded, not cleared)
 }
-// A draw whose program or pipeline is still being built waits for it, up to a budget per frame, instead of being
-// skipped (objects popping in on entering an area). At 30 fps a frame has ~27 ms to spare (uncapped, the overworld
-// runs at ~160 fps), so 20 ms per frame hides the pop-in with a warm cache (~1 ms per program) without costing frames;
-// a cold cache (first visit) spends the budget and skips the rest as before. LARECOMP_SHADER_WAIT_MS=<ms> (0: never).
-static bool wait_built(_Atomic int *state) {
+// A draw whose program or pipeline is still being built HOLDS (the render thread waits) instead of being skipped: a
+// skipped draw is missing from the image (objects popping in, a black rug, a shadow map left incomplete). Every
+// project that measured it rejected skipping (mk8-recomp, OpenSmash, SuperMarioWonderRecomp: 5,367 draws missing in one
+// window). A job nobody has started is claimed and built right here (job_claim), so a hold lasts one build, not the
+// queue. The wait has a ceiling per draw, LARECOMP_SHADER_HOLD_MS (default 3000): past it the draw is skipped as before
+// and counted ("hold timeouts": should stay 0). The pipeline recipes (below) build most of them ahead, so holds are
+// rare with a warm cache. LARECOMP_SHADER_HOLD_MS=0: the old mode, a budget of LARECOMP_SHADER_WAIT_MS (20) per frame,
+// then skips (A/B).
+static bool wait_built(_Atomic int *state, void (*fn)(void *), void *arg) {
     if (atomic_load(state) != 0) return true;
-    static int64_t budget = -1;
-    if (budget < 0) budget = (getenv("LARECOMP_SHADER_WAIT_MS") ? atoi(getenv("LARECOMP_SHADER_WAIT_MS")) : 20) * 1000000ll;
+    static int64_t hold = -1, budget = -1;
+    if (hold < 0) {
+        hold = (getenv("LARECOMP_SHADER_HOLD_MS") ? atoi(getenv("LARECOMP_SHADER_HOLD_MS")) : 3000) * 1000000ll;
+        budget = (getenv("LARECOMP_SHADER_WAIT_MS") ? atoi(getenv("LARECOMP_SHADER_WAIT_MS")) : 20) * 1000000ll;
+    }
     if (sync_shaders()) return true;  // (built already)
+    uint64_t t0 = SDL_GetTicksNS();
+    if (hold > 0) {
+        if (fn && job_claim(fn, arg)) { fn(arg); stat_hold_claims++; }
+        while (atomic_load(state) == 0 && (int64_t)(SDL_GetTicksNS() - t0) < hold) SDL_DelayNS(50000);
+        uint64_t dt = SDL_GetTicksNS() - t0;
+        stat_holds++;
+        stat_hold_ns += dt;
+        if (dt > stat_hold_max_ns) stat_hold_max_ns = dt;
+        stat_shader_wait_ns += dt;
+        if (atomic_load(state) == 0) stat_hold_timeouts++;
+        return atomic_load(state) != 0;
+    }
     extern uint64_t vk_frame_counter(void);
     static uint64_t frame;
     static int64_t spent;
     if (vk_frame_counter() != frame) { frame = vk_frame_counter(); spent = 0; }
     if (spent >= budget) return false;
-    uint64_t t0 = SDL_GetTicksNS();
     while (atomic_load(state) == 0 && spent + (int64_t)(SDL_GetTicksNS() - t0) < budget) SDL_DelayNS(100000);
     uint64_t dt = SDL_GetTicksNS() - t0;
     spent += (int64_t)dt;
     stat_shader_wait_ns += dt;
     return atomic_load(state) != 0;
+}
+
+// ================================================================== pipeline recipes (prewarm)
+// <cache>/pipeline_recipes.bin: every graphics pipeline a draw created on this PC, by value - the two stages' content
+// hashes, their shader keys and the PipeKey without its Prog pointer. When the game hands a program over
+// (nvnProgramSetShaders -> renderer_stage_seen, game thread), the recipes whose two stages are now both in memory are
+// prewarmed on the low-priority queue: the program is translated (get_program, keyed by the stages' addresses as a draw
+// keys it) and then the pipeline is built from the recipe's key through pipe_get - the table and function a draw uses.
+// A draw that later meets that key adopts the pipeline. A recipe that no longer matches anything (another translator,
+// a stale file) only costs prewarm work: it cannot change what a draw binds. The same design was measured in mk8-recomp
+// (recipes), OpenSmash (pipes.bin) and SuperMarioWonderRecomp (.keys): docs/engineering/recomp-project-comparison.md.
+// The file is append-only; each record is checked (magic, version, struct sizes, checksum) and a bad one is skipped.
+// LARECOMP_PIPE_RECIPES=0: no prewarm and no recording (A/B).
+#define RECIPE_MAGIC 0x50434552u  // "RECP"
+#define RECIPE_VERSION 2u  // 2: fragment-less programs (chash[1] = 0)
+#define RECIPE_MAX 40000
+typedef struct {
+    uint32_t magic, version, keysize, pipesize;
+    uint64_t chash[2];
+    ShaderKey vkey, fkey;
+    PipeKey k;  // k.prog = NULL
+    uint64_t check;
+} RecipeRec;
+// state: 0 waiting for its stages, 1 queued, 2 program requested, 3 done (pipeline requested, or dropped)
+typedef struct { RecipeRec r; uint8_t state; Prog *prog; } Recipe;
+static Recipe *g_recipes;
+static int g_nrecipes, g_cap_recipes;
+typedef struct { uint64_t h; int idx; } RecStage;
+static RecStage *g_rec_by_stage;  // (stage hash, recipe) for both stages, sorted by hash
+static int g_nrec_by_stage;
+#define REC_KNOWN (1 << 17)
+static uint64_t g_rec_known[REC_KNOWN];  // checksums of the recipes on file or recorded this run (open addressing)
+static RecipeRec *g_rec_out;             // recorded this run, not yet appended to the file
+static int g_nrec_out, g_cap_rec_out;
+static int *g_rec_queue;                 // recipes whose two stages are in memory, to prewarm in order
+static int g_nrec_queue, g_cap_rec_queue, g_rec_queue_at;
+static uint64_t stat_recipe_stale, stat_recipe_loaded, stat_recipe_progs, stat_recipe_pipes, stat_recipe_adopted, stat_recipe_recorded;
+// stages the game handed over (game thread -> render thread)
+typedef struct { uint64_t h, addr; uint32_t co, size; } StageSeen;
+static pthread_mutex_t g_stage_lock = PTHREAD_MUTEX_INITIALIZER;
+static StageSeen *g_stage_in;
+static int g_nstage_in, g_cap_stage_in;
+#define STAGE_TAB (1 << 15)
+static StageSeen g_stage_tab[STAGE_TAB];  // content hash -> where that blob is now (render thread)
+
+static bool recipes_on(void) {
+    static int on = -1;
+    if (on < 0) on = !getenv("LARECOMP_PIPE_RECIPES") || atoi(getenv("LARECOMP_PIPE_RECIPES")) != 0;
+    return on;
+}
+
+static uint64_t recipe_check(const RecipeRec *r) { return hash_words(0x5245435052454350ull, r, offsetof(RecipeRec, check)) | 1; }
+
+static bool recipe_known_add(uint64_t c) {  // false when already known
+    uint32_t i = (uint32_t)(c ^ (c >> 23)) & (REC_KNOWN - 1);
+    for (int n = 0; n < REC_KNOWN; n++, i = (i + 1) & (REC_KNOWN - 1)) {
+        if (g_rec_known[i] == c) return false;
+        if (!g_rec_known[i]) { g_rec_known[i] = c; return true; }
+    }
+    return false;  // (full: treated as known)
+}
+
+static void recipe_path(char *out, size_t n) {
+    extern const char *rt_cache_dir(void);
+    snprintf(out, n, "%s/pipeline_recipes.bin", rt_cache_dir());
+}
+
+static int cmp_rec_stage(const void *a, const void *b) {
+    uint64_t x = ((const RecStage *)a)->h, y = ((const RecStage *)b)->h;
+    return x < y ? -1 : x > y;
+}
+
+static void recipes_load(void) {
+    static bool done;
+    if (done) return;
+    done = true;
+    char path[600];
+    recipe_path(path, sizeof path);
+    FILE *f = fopen(path, "rb");
+    int bad = 0;
+    if (f) {
+        RecipeRec r;
+        while (g_nrecipes < RECIPE_MAX && fread(&r, sizeof r, 1, f) == 1) {
+            if (r.magic != RECIPE_MAGIC || r.version != RECIPE_VERSION || r.keysize != sizeof(ShaderKey) ||
+                r.pipesize != sizeof(PipeKey) || r.check != recipe_check(&r) || !r.chash[0]) { bad++; continue; }
+            if (!recipe_known_add(r.check)) continue;
+            if (g_nrecipes == g_cap_recipes) {
+                g_cap_recipes = g_cap_recipes ? g_cap_recipes * 2 : 1024;
+                g_recipes = realloc(g_recipes, (size_t)g_cap_recipes * sizeof *g_recipes);
+            }
+            memset(&g_recipes[g_nrecipes], 0, sizeof *g_recipes);
+            g_recipes[g_nrecipes++].r = r;
+        }
+        fclose(f);
+    }
+    g_rec_by_stage = malloc((size_t)(2 * g_nrecipes + 1) * sizeof *g_rec_by_stage);
+    for (int i = 0; i < g_nrecipes; i++)
+        for (int s = 0; s < 2; s++)
+            if (g_recipes[i].r.chash[s]) g_rec_by_stage[g_nrec_by_stage++] = (RecStage){g_recipes[i].r.chash[s], i};
+    qsort(g_rec_by_stage, (size_t)g_nrec_by_stage, sizeof *g_rec_by_stage, cmp_rec_stage);
+    stat_recipe_loaded = (uint64_t)g_nrecipes;
+    LOG("[recipes] %d pipeline recipes from %s%s\n", g_nrecipes, path, bad ? " (invalid records skipped)" : "");
+}
+
+void renderer_stage_seen(uint64_t h, uint64_t addr, uint32_t co, uint32_t size) {
+    if (!recipes_on()) return;
+    pthread_mutex_lock(&g_stage_lock);
+    if (g_nstage_in == g_cap_stage_in) {
+        g_cap_stage_in = g_cap_stage_in ? g_cap_stage_in * 2 : 256;
+        g_stage_in = realloc(g_stage_in, (size_t)g_cap_stage_in * sizeof *g_stage_in);
+    }
+    g_stage_in[g_nstage_in++] = (StageSeen){h, addr, co, size};
+    pthread_mutex_unlock(&g_stage_lock);
+}
+
+// The blob at a stage's recorded address still has its content (prewarm: the memory may have been reused since)
+static bool stage_still_there(const StageSeen *e) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    const uint8_t *b = (const uint8_t *)(uintptr_t)e->addr;
+    for (uint32_t k = 0; k < e->size; k++) h = (h ^ b[k]) * 0x100000001B3ull;
+    return (h ? h : 1) == e->h;
+}
+
+static int stage_slot(uint64_t h) {
+    uint32_t i = (uint32_t)(h ^ (h >> 29)) & (STAGE_TAB - 1);
+    for (int n = 0; n < STAGE_TAB; n++, i = (i + 1) & (STAGE_TAB - 1))
+        if (!g_stage_tab[i].h || g_stage_tab[i].h == h) return (int)i;
+    return -1;
+}
+
+static void rec_queue_push(int idx) {
+    if (g_nrec_queue == g_cap_rec_queue) {
+        g_cap_rec_queue = g_cap_rec_queue ? g_cap_rec_queue * 2 : 1024;
+        g_rec_queue = realloc(g_rec_queue, (size_t)g_cap_rec_queue * sizeof *g_rec_queue);
+    }
+    g_rec_queue[g_nrec_queue++] = idx;
+}
+
+// The pipeline with this exact key, made by a draw or by the prewarm (render thread only).
+static Pipe *pipe_get(const PipeKey *k, bool prewarm, bool *created) {
+    uint64_t ph = hash_words(0xcbf29ce484222325ull, k, sizeof *k);
+    if (!ph) ph = 1;
+    uint32_t pslot = (uint32_t)(ph ^ (ph >> 29)) & (PIPE_TAB - 1);
+    while (pipe_tab[pslot].key && pipe_tab[pslot].key != ph) pslot = (pslot + 1) & (PIPE_TAB - 1);
+    Pipe *pp = pipe_tab[pslot].pipe;
+    *created = !pp;
+    if (!pp) {
+        pp = calloc(1, sizeof *pp);
+        pp->k = *k;
+        pp->prewarmed = prewarm;
+        pipe_tab[pslot].key = ph;
+        pipe_tab[pslot].pipe = pp;
+        if (prewarm) run_job_low(build_pipeline, pp);
+        else run_job(build_pipeline, pp);
+    }
+    return pp;
+}
+
+static uint64_t stat_recipe_nohash[2], stat_recipe_dup, stat_pipes_drawn;
+static void recipe_record(const Prog *pr, const PipeKey *k) {
+    stat_pipes_drawn++;
+    if (!recipes_on()) return;
+    if (!pr->chash[0] || (!pr->chash[1] && pr->code[1])) { stat_recipe_nohash[!pr->chash[0] ? 0 : 1]++; return; }
+    RecipeRec r;
+    memset(&r, 0, sizeof r);
+    r.magic = RECIPE_MAGIC;
+    r.version = RECIPE_VERSION;
+    r.keysize = sizeof(ShaderKey);
+    r.pipesize = sizeof(PipeKey);
+    r.chash[0] = pr->chash[0];
+    r.chash[1] = pr->chash[1];
+    r.vkey = pr->vkey;
+    r.fkey = pr->fkey;
+    r.k = *k;
+    r.k.prog = NULL;
+    r.check = recipe_check(&r);
+    if (!recipe_known_add(r.check)) { stat_recipe_dup++; return; }
+    if (g_nrec_out == g_cap_rec_out) {
+        g_cap_rec_out = g_cap_rec_out ? g_cap_rec_out * 2 : 256;
+        g_rec_out = realloc(g_rec_out, (size_t)g_cap_rec_out * sizeof *g_rec_out);
+    }
+    g_rec_out[g_nrec_out++] = r;
+    stat_recipe_recorded++;
+}
+
+static void recipes_flush(void) {  // (with the stats line, every ~2 s: append what this run recorded)
+    if (!g_nrec_out) return;
+    char path[600];
+    recipe_path(path, sizeof path);
+    FILE *f = fopen(path, "ab");
+    if (f) {
+        fwrite(g_rec_out, sizeof *g_rec_out, (size_t)g_nrec_out, f);
+        fclose(f);
+    }
+    g_nrec_out = 0;
+}
+
+// Render thread, once per submitted list: take the stages the game handed over, queue the recipes they complete,
+// and advance a bounded number of queued recipes (the program first, the pipeline once the program is ready).
+static void recipes_pump(void) {
+    if (!recipes_on()) return;
+    recipes_load();
+    if (!g_nrecipes) return;
+    StageSeen in[256];
+    pthread_mutex_lock(&g_stage_lock);
+    int n = g_nstage_in < 256 ? g_nstage_in : 256;
+    memcpy(in, g_stage_in, (size_t)n * sizeof *in);
+    memmove(g_stage_in, g_stage_in + n, (size_t)(g_nstage_in - n) * sizeof *in);
+    g_nstage_in -= n;
+    pthread_mutex_unlock(&g_stage_lock);
+    for (int i = 0; i < n; i++) {
+        int sl = stage_slot(in[i].h);
+        if (sl < 0) continue;
+        bool fresh = !g_stage_tab[sl].h;
+        g_stage_tab[sl] = in[i];
+        if (!fresh) continue;  // (seen before: its recipes were queued then)
+        int lo = 0, hi = g_nrec_by_stage;  // first entry with this hash
+        while (lo < hi) { int m = (lo + hi) / 2; if (g_rec_by_stage[m].h < in[i].h) lo = m + 1; else hi = m; }
+        for (int e = lo; e < g_nrec_by_stage && g_rec_by_stage[e].h == in[i].h; e++) {
+            Recipe *r = &g_recipes[g_rec_by_stage[e].idx];
+            if (r->state) continue;
+            int s0 = stage_slot(r->r.chash[0]), s1 = r->r.chash[1] ? stage_slot(r->r.chash[1]) : 0;
+            if (s0 < 0 || s1 < 0 || !g_stage_tab[s0].h || (r->r.chash[1] && !g_stage_tab[s1].h)) continue;
+            r->state = 1;
+            rec_queue_push(g_rec_by_stage[e].idx);
+        }
+    }
+    // advance: at most 48 steps per list (a step queues a job: microseconds)
+    int steps = 0;
+    bool prefix_done = true;
+    for (int q = g_rec_queue_at; q < g_nrec_queue && steps < 48; q++) {
+        Recipe *r = &g_recipes[g_rec_queue[q]];
+        if (r->state == 1) {
+            int s0 = stage_slot(r->r.chash[0]), s1 = r->r.chash[1] ? stage_slot(r->r.chash[1]) : -1;
+            NvnProgram np;
+            memset(&np, 0, sizeof np);
+            np.stage_mask = s1 >= 0 ? 3 : 1;
+            np.stages[0].stage = 0, np.stages[0].code_addr = g_stage_tab[s0].addr, np.stages[0].const_offset = g_stage_tab[s0].co;
+            np.stages[0].content_hash = r->r.chash[0];
+            if (s1 >= 0) {
+                np.stages[1].stage = 1, np.stages[1].code_addr = g_stage_tab[s1].addr, np.stages[1].const_offset = g_stage_tab[s1].co;
+                np.stages[1].content_hash = r->r.chash[1];
+            }
+            if (!stage_still_there(&g_stage_tab[s0]) || (s1 >= 0 && !stage_still_there(&g_stage_tab[s1]))) {
+                r->state = 3;  // (moved or freed since: no prewarm; a draw that needs it translates it as before)
+                stat_recipe_stale++;
+                continue;
+            }
+            ShaderKey vk = r->r.vkey, fk = r->r.fkey;
+            r->prog = get_program_q(&np, &vk, &fk, true);
+            r->state = r->prog ? 2 : 3;
+            stat_recipe_progs++;
+            steps++;
+        }
+        if (r->state == 2) {
+            int ps = atomic_load(&r->prog->state);
+            if (ps == 1) {
+                PipeKey k = r->r.k;
+                k.prog = r->prog;
+                bool created;
+                pipe_get(&k, true, &created);
+                if (created) stat_recipe_pipes++;
+                steps++;
+                r->state = 3;
+            } else if (ps > 1) {
+                r->state = 3;  // (the program failed: nothing to build)
+            }
+        }
+        if (r->state == 3 && prefix_done) g_rec_queue_at = q + 1;  // (the done prefix is not looked at again)
+        else prefix_done = false;
+    }
+}
+
+void recipes_stats(char *out, size_t n) {
+    recipes_flush();
+    if (!recipes_on()) return;
+    snprintf(out, n, " | recipes %llu: progs %llu pipes %llu adopted %llu new %llu (draw pipes %llu, no vs hash %llu, no fs hash %llu, dup %llu, stale %llu)",
+             (unsigned long long)stat_recipe_loaded, (unsigned long long)stat_recipe_progs, (unsigned long long)stat_recipe_pipes,
+             (unsigned long long)stat_recipe_adopted, (unsigned long long)stat_recipe_recorded, (unsigned long long)stat_pipes_drawn,
+             (unsigned long long)stat_recipe_nohash[0], (unsigned long long)stat_recipe_nohash[1], (unsigned long long)stat_recipe_dup, (unsigned long long)stat_recipe_stale);
+    stat_pipes_drawn = stat_recipe_nohash[0] = stat_recipe_nohash[1] = stat_recipe_dup = stat_recipe_stale = 0;
+    stat_recipe_progs = stat_recipe_pipes = stat_recipe_adopted = stat_recipe_recorded = 0;
 }
 
 static uint64_t prof_tp_;
@@ -2415,7 +2783,7 @@ static void draw_(CmdRec *r, bool indexed) {
     for (int i = 0; i < st.nattrib; i++) vkey.attr_kind[i] = (uint8_t)attr_kind(st.attrib[i] & 0xFF);
     for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) fkey.rt_kind[i] = (uint8_t)rt_kind(st.rt.color[i]->format);
     Prog *pr = get_program(st.program, &vkey, &fkey);
-    if (pr) wait_built(&pr->state);
+    if (pr) wait_built(&pr->state, translate_program, pr);
     if (!pr || atomic_load(&pr->state) != 1) { SKIP(pr ? 1 + (atomic_load(&pr->state) > 1) : 3); return; }
     {   // fragment-shader hash: interior backdrop detection (widescreen), skip lists, item twinkle (renderer.m)
         static uint64_t last_fs, last_hash;
@@ -2528,19 +2896,12 @@ static void draw_(CmdRec *r, bool indexed) {
     k.a2c = st.ms[0xC] != 0;
     k.topo_class = cls;
     k.poly_fill = st.poly[2] != 1;
-    uint64_t ph = hash_words(0xcbf29ce484222325ull, &k, sizeof k);
-    if (!ph) ph = 1;
-    uint32_t pslot = (uint32_t)(ph ^ (ph >> 29)) & (PIPE_TAB - 1);
-    while (pipe_tab[pslot].key && pipe_tab[pslot].key != ph) pslot = (pslot + 1) & (PIPE_TAB - 1);
-    Pipe *pp = pipe_tab[pslot].pipe;
-    if (!pp) {
-        pp = calloc(1, sizeof *pp);
-        pp->k = k;
-        pipe_tab[pslot].key = ph;
-        pipe_tab[pslot].pipe = pp;
-        run_job(build_pipeline, pp);
-    }
-    wait_built(&pp->state);
+    bool created;
+    Pipe *pp = pipe_get(&k, false, &created);
+    if (created) recipe_record(pr, &k);
+    else if (pp->prewarmed && !pp->drawn) stat_recipe_adopted++;
+    pp->drawn = true;
+    wait_built(&pp->state, build_pipeline, pp);
     if (atomic_load(&pp->state) != 1) { SKIP(5 + (atomic_load(&pp->state) > 1)); return; }
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pp->pipe);
     uint64_t prof_td_ = prof ? SDL_GetTicksNS() : 0;
@@ -3485,6 +3846,7 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
 static void exec_list(uint64_t handle, int depth) {
     uint64_t p = handle;
     if (depth == 0) st.obj = 0, st.obj_draw = 0;  // (a submitted list starts with no object; its called lists inherit)
+    if (depth == 0) recipes_pump();  // (pipeline recipes: prewarm what the programs handed over complete)
     for (int guard = 0; guard < 10000000; guard++) {
         CmdRec *r = cmd_rec_at(p);  // (p is a guest address; the record is in the shadow, nvn.h)
         void *x = r->extra;
@@ -3494,6 +3856,26 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_END: return;
         case CMD_OBJECT: st.obj = r->x[0]; st.obj_draw = 0; { static int d; if (getenv("LARECOMP_OBJDBG") && vk_frame_counter() == 1450 && d++ < 80) LOG("[objdbg] depth %d object %llx\n", depth,(unsigned long long)r->x[0]); } break;
         case CMD_JUMP: p = r->x[0]; continue;
+        case CMD_BARRIER:
+            // nvnCommandBufferBarrier(bits): orders draws / dispatches and makes their writes visible to later reads
+            // (render targets read as textures, written buffers read as constants). Recorded but ignored until 20/10
+            // (falls to default): a draw that samples what an earlier draw of the same pass wrote read stale data.
+            // As SkyRecomp (MIT): a nonzero barrier ends the pass (a Vulkan memory barrier can't be inside dynamic
+            // rendering), barriers everything, and drops the per-submission constant copies.
+            // LARECOMP_NVN_BARRIER=0: ignore them again (A/B).
+            {
+                static int on = -1;
+                if (on < 0) on = !getenv("LARECOMP_NVN_BARRIER") || atoi(getenv("LARECOMP_NVN_BARRIER")) != 0;
+                stat_barrier_bits[r->x[0] & 0x1FF]++;  // (the bits the game uses: logged with the stats line)
+                if (on && r->x[0]) {
+                    vk_end_pass();
+                    st.rt_dirty = true;
+                    vk_full_barrier(vk_cmd());
+                    guest_copy_flush();
+                    stat_nvn_barriers++;
+                }
+            }
+            break;
         case CMD_CALL: {
             const uint64_t *h = x;
             uint64_t obj = st.obj;  // (a called list names objects of its own: they end with it)

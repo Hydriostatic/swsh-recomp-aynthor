@@ -66,6 +66,8 @@ typedef struct NvnShaderStage {
     uint64_t code_addr;       // GPU (== CPU) address of the code
     const uint8_t *control;   // control section
     uint32_t const_offset, const_size;  // compiler constants (bound as c1), within the code blob
+    uint64_t content_hash;    // FNV-1a of the code block (size at control + 0x704): the stage's identity across runs
+                              // (its address changes); 0 when the size is unknown. Pipeline recipes match on it.
     void *backend;
 } NvnShaderStage;
 
@@ -156,3 +158,5 @@ uint64_t rt_fence_ticket(void);
 void rt_wait_ticket(uint64_t ticket);
 void rt_reset(void);
 uint64_t renderer_game_frame(void);  // presents the game has made (the backend's own count: renderer_present_count)
+// nvnProgramSetShaders (game thread): a stage blob with this content hash is now at code_addr (pipeline recipes, exec.c)
+void renderer_stage_seen(uint64_t content_hash, uint64_t code_addr, uint32_t const_offset, uint32_t size);
