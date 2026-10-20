@@ -68,7 +68,12 @@ static void handle_close(uint32_t h) {
 // Threads blocked in WaitSynchronization; object signals wake only these (caller holds g_klock).
 static KThread *g_syncwaiters;
 
-static void wake(KThread *t) { pthread_cond_signal(&t->cond); }
+static void wake(KThread *t) {
+#ifdef _WIN32
+    plat_waiter_signal(t->waiter);  // (the precise wait; the condition too, for LARECOMP_KWAIT=0)
+#endif
+    pthread_cond_signal(&t->cond);
+}
 
 void kernel_signal(KObject *o) {
     // caller holds g_klock
@@ -94,10 +99,37 @@ static void deadline(struct timespec *ts, int64_t timeout_ns) {
     if (ts->tv_nsec >= 1000000000) { ts->tv_sec++; ts->tv_nsec -= 1000000000; }
 }
 
+#ifdef _WIN32
+// Guest timed waits on Windows: the thread's precise waiter (platform.h plat_waiter_*) instead of
+// pthread_cond_timedwait / nanosleep, which round 1-8 ms up to ~16 ms (tests/runtime/timed_wait_test.c).
+// LARECOMP_KWAIT=0: the old pthread waits (A/B).
+static bool kwait_precise(void) {
+    static int on = -1;
+    if (on < 0) on = !getenv("LARECOMP_KWAIT") || atoi(getenv("LARECOMP_KWAIT")) != 0;
+    return on;
+}
+#endif
+
 // Sleep on the current thread's condition. Returns false on timeout. Caller holds g_klock.
 static pthread_cond_t g_nothread_cond = PTHREAD_COND_INITIALIZER;
 static bool kwait(int64_t timeout_ns, const struct timespec *ts) {
     pthread_cond_t *cv = t_cur ? &t_cur->cond : &g_nothread_cond;
+#ifdef _WIN32
+    if (t_cur && kwait_precise()) {  // (the event is reset under g_klock: a wake between the unlock and the wait stays set)
+        int64_t left = -1;
+        if (timeout_ns >= 0) {
+            struct timespec now;
+            clock_gettime(CLOCK_REALTIME, &now);
+            left = (int64_t)(ts->tv_sec - now.tv_sec) * 1000000000ll + (ts->tv_nsec - now.tv_nsec);
+            if (left < 0) left = 0;
+        }
+        plat_waiter_reset(t_cur->waiter);
+        pthread_mutex_unlock(&g_klock);
+        bool r = plat_waiter_wait(t_cur->waiter, left);
+        pthread_mutex_lock(&g_klock);
+        return r;
+    }
+#endif
     if (timeout_ns < 0) {
         pthread_cond_wait(cv, &g_klock);
         return true;
@@ -202,6 +234,9 @@ static void *thread_main(void *arg) {
 static KThread *thread_new(uint64_t entry, uint64_t arg, uint64_t stack_top, int prio, int core) {
     KThread *t = calloc(1, sizeof *t);
     pthread_cond_init(&t->cond, NULL);
+#ifdef _WIN32
+    if (!(t->waiter = plat_waiter_create())) FATAL("cannot create a guest thread's waiter\n");
+#endif
     t->cur_svc = -1;
     t->obj.type = KOBJ_THREAD;
     t->entry = entry;
@@ -760,6 +795,12 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         if (ns <= 0) { sched_yield(); break; }
         for (uint64_t end = plat_now_ns() + (uint64_t)ns, now; !g_rt_unwind && (now = plat_now_ns()) < end;) {
             uint64_t d = end - now < 50000000 ? end - now : 50000000;
+#ifdef _WIN32
+            if (t_cur && kwait_precise()) {  // (the thread's waiter: a high-resolution timeout, and a reboot's wake cuts it short)
+                plat_waiter_wait(t_cur->waiter, (int64_t)d);
+                continue;
+            }
+#endif
             struct timespec ts = {(time_t)(d / 1000000000), (long)(d % 1000000000)};
             nanosleep(&ts, NULL);
         }
@@ -984,6 +1025,9 @@ void kernel_reset(void) {
     for (KThread *t = g_threads, *next; t; t = next) {
         next = t->anext;
         pthread_cond_destroy(&t->cond);
+#ifdef _WIN32
+        plat_waiter_destroy(t->waiter);
+#endif
         free(t);
     }
     g_threads = NULL;

@@ -34,6 +34,17 @@ int plat_protect(uint64_t addr, uint64_t size, int prot);  // 0 on success
 uint64_t plat_now_ns(void);                // monotonic
 void plat_sleep_until_ns(uint64_t t);      // precise wait for plat_now_ns() >= t
 void plat_thread_realtime(uint64_t period_ns);  // periodic timing thread (vsync): don't coalesce its timers
+#ifdef _WIN32
+// A guest thread's precise wait (kernel.c kwait): an auto-reset event its wakers set, and a high-resolution timer for the
+// timeout. MinGW's pthread_cond_timedwait / nanosleep round short waits up to the 15.6 ms system tick on Windows even
+// with timeBeginPeriod(1): 1 / 3 / 8 ms took 16.0 / 16.3 / 16.4 ms here (tests/runtime/timed_wait_test.c). Technique from
+// SkyRecomp (MIT, docs/engineering/recomp-project-comparison.md).
+void *plat_waiter_create(void);
+void plat_waiter_destroy(void *w);
+void plat_waiter_reset(void *w);
+void plat_waiter_signal(void *w);
+bool plat_waiter_wait(void *w, int64_t timeout_ns);  // -1: no timeout; true when signalled, false on timeout
+#endif
 
 // ---- process
 void plat_init(void);                                // first thing in main()

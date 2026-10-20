@@ -95,6 +95,41 @@ uint64_t plat_now_ns(void) {
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x2
 #endif
 
+typedef struct { HANDLE event, timer; } PlatWaiter;
+
+void *plat_waiter_create(void) {
+    PlatWaiter *w = calloc(1, sizeof *w);
+    if (!w) return NULL;
+    w->event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    w->timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (!w->timer) w->timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+    if (!w->event || !w->timer) { plat_waiter_destroy(w); return NULL; }
+    return w;
+}
+
+void plat_waiter_destroy(void *waiter) {
+    PlatWaiter *w = waiter;
+    if (!w) return;
+    if (w->event) CloseHandle(w->event);
+    if (w->timer) CloseHandle(w->timer);
+    free(w);
+}
+
+void plat_waiter_reset(void *w) { ResetEvent(((PlatWaiter *)w)->event); }
+void plat_waiter_signal(void *w) { SetEvent(((PlatWaiter *)w)->event); }
+
+bool plat_waiter_wait(void *waiter, int64_t timeout_ns) {
+    PlatWaiter *w = waiter;
+    if (timeout_ns < 0) return WaitForSingleObject(w->event, INFINITE) == WAIT_OBJECT_0;
+    if (!timeout_ns) return WaitForSingleObject(w->event, 0) == WAIT_OBJECT_0;
+    LARGE_INTEGER due = {.QuadPart = -(LONGLONG)((timeout_ns + 99) / 100)};  // relative, 100 ns units
+    if (!SetWaitableTimer(w->timer, &due, 0, NULL, NULL, FALSE)) return WaitForSingleObject(w->event, (DWORD)((timeout_ns + 999999) / 1000000)) == WAIT_OBJECT_0;
+    HANDLE h[2] = {w->event, w->timer};
+    DWORD r = WaitForMultipleObjects(2, h, FALSE, INFINITE);
+    CancelWaitableTimer(w->timer);
+    return r == WAIT_OBJECT_0;
+}
+
 void plat_sleep_until_ns(uint64_t t) {
     static __thread HANDLE timer;
     if (!timer) {
