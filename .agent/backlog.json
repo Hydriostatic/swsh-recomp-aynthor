@@ -181,9 +181,19 @@
    "repro": "a definir (LARECOMP_INPUT_LOOP)",
    "regression": "status_ok",
    "status": "open",
-   "attempts": 0,
+   "attempts": 1,
    "max_attempts": 6,
-   "stalls": 0
+   "stalls": 0,
+   "last_evidence_hash": "0f43a5fd786e",
+   "history": [
+    {
+     "when": "2026-10-20T07:05:03",
+     "commit": "805c64e",
+     "status": "open",
+     "evidence": "loop automatico (quadrado) descartado pelo usuario; 19 min rodados sem erro antes de parar (reports/runs/stab_postwick/20261020-064236-stab60-1-1)",
+     "note": "trocar por sessoes reais do jogador (atalho do desktop grava build/logs/sword-*.log): contar crashes e memoria nesses logs"
+    }
+   ]
   },
   {
    "id": "FPS120",
@@ -364,6 +374,18 @@
    "title": "Modo 60 fps: animacoes contadas em quadros andam no dobro (plateia do titulo pisca: G3). Achar e passo-a-passo pela metade no modo 60",
    "repro": "tests/regression/title60.json (alternancia 0,226)",
    "regression": "title60 G3-no-alternation"
+  },
+  {
+   "id": "LEAK",
+   "priority": "P2",
+   "order": 7.6,
+   "status": "open",
+   "attempts": 0,
+   "max_attempts": 6,
+   "stalls": 0,
+   "title": "Memoria cresce ~4-5 MB/min em jogo continuo (4455 -> 4525 MB em ~16 min andando por Postwick/Wedgehurst): achar o que acumula (texturas, views, descriptor pools, pipelines, cache de copias)",
+   "repro": "reports/runs/stab_postwick/*stab60-1* summary.json memory.series_mb",
+   "regression": "serie de memoria estavel em sessao longa"
   }
  ]
 }
