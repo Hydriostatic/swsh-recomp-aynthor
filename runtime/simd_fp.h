@@ -148,9 +148,16 @@ SN T FN(slow)(Cpu *c, int op, T a, T b, T d) {
 // Scalar FP op (constant op folds the selection).
 SI T FN(op)(Cpu *c, int op, T a, T b, T d) {
     if (__builtin_expect(c->fpcr & FPCR_SLOW, 0)) return FN(slow)(c, op, a, b, d);
+#ifdef SIMD_HW_FZ
+    int fz = (c->fpcr & FPCR_FZ) != 0;  // (results: MXCSR.FTZ; inputs here)
+    if (fz) a = FN(flush)(a), b = FN(flush)(b), d = FN(flush)(d);
+#endif
     if (FMINMAX(op)) return FN(minmax)(c, op, a, b);
     T r = FCALC(op, a, b, d, K);
     if (__builtin_expect(FBAD(op, r), 0)) r = FN(fix)(c, op, a, b, d);
+#ifdef SIMD_HW_FZ
+    if (__builtin_expect(fz && (FN(fb)(r) & ~SGN) == MINN, 0)) return FN(slow)(c, op, a, b, d);  // (tininess before rounding)
+#endif
     return r;
 }
 
@@ -163,8 +170,12 @@ SN VT FN(vslow)(Cpu *c, int op, VT a, VT b, VT d) {
 SI VTU FN(vsel)(VTS m, VTU x, VTU y) { return (x & (VTU)m) | (y & ~(VTU)m); }
 
 // Vector FP op: native lanes, any NaN (or FPCR.FZ/RMode) reruns all lanes through the scalar path.
+SI VT FN(vfz)(Cpu *c, VT a);
 SI VT FN(vop)(Cpu *c, int op, VT a, VT b, VT d) {
     if (__builtin_expect(c->fpcr & FPCR_SLOW, 0)) return FN(vslow)(c, op, a, b, d);
+#ifdef SIMD_HW_FZ
+    if (c->fpcr & FPCR_FZ) a = FN(vfz)(c, a), b = FN(vfz)(c, b), d = FN(vfz)(c, d);
+#endif
     VT r;
     if (FMINMAX(op)) {
         if (__builtin_expect(__builtin_reduce_or((a != a) | (b != b)) != 0, 0)) return FN(vslow)(c, op, a, b, d);
@@ -177,6 +188,10 @@ SI VT FN(vop)(Cpu *c, int op, VT a, VT b, VT d) {
     }
     r = FCALC(op, a, b, d, VK);
     if (__builtin_expect(__builtin_reduce_or(FBAD(op, r)) != 0, 0)) return FN(vslow)(c, op, a, b, d);
+#ifdef SIMD_HW_FZ
+    if ((c->fpcr & FPCR_FZ) && __builtin_expect(__builtin_reduce_or(((VTU)r & ~((VTU){} + SGN)) == MINN) != 0, 0))
+        return FN(vslow)(c, op, a, b, d);  // (tininess before rounding)
+#endif
     return r;
 }
 

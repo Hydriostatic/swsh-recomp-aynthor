@@ -50,7 +50,19 @@ typedef u128 __attribute__((aligned(1), may_alias)) u128u;
 #define FPCR_DN (1u << 25)
 #define FPCR_FZ (1u << 24)
 #define FPCR_RM (3u << 22)
+// FPCR.FZ on x86 hosts: the guest thread's SSE control register gets FTZ (rt_fpcr_write), so native operations
+// flush tiny results as ARM does; the FP ops flush denormal inputs themselves (integer bit tests), and only a rounding
+// mode takes the emulated slow path. Sword sets FZ for good: every scalar FP op and every vector lane ran through the
+// slow path, a large share of the game threads' time. Not DAZ: with denormal inputs read as zero, compiler-generated
+// FP compares behind bit tests (llvm.is.fpclass) misclassify them (FRECPE of a denormal went wrong in the difftest).
+// ARM detects tininess before rounding and x86 after: a result equal to the smallest normal is redone in the slow
+// path. Non-x86 hosts, and a game library built with -DSIMD_NO_HW_FZ (the A/B), keep the emulated flush.
+#if (defined(__x86_64__) || defined(__i386__)) && !defined(SIMD_NO_HW_FZ)
+#define SIMD_HW_FZ 1
+#define FPCR_SLOW (FPCR_RM)
+#else
 #define FPCR_SLOW (FPCR_FZ | FPCR_RM)
+#endif
 
 enum { FOP_ADD, FOP_SUB, FOP_MUL, FOP_MULX, FOP_NMUL, FOP_DIV, FOP_ABD, FOP_SQRT, FOP_MADD, FOP_RECPS, FOP_RSQRTS,
        FOP_MAX, FOP_MIN, FOP_MAXNM, FOP_MINNM };
@@ -231,6 +243,15 @@ SI void simd_round_to(SimdRound saved, unsigned rmode) { (void)saved; fesetround
 SI void simd_round_restore(SimdRound saved) { fesetround(saved); }
 #endif
 #define FPCR_RMODE(fpcr) ((unsigned)((fpcr) >> 22) & 3)
+
+// MSR FPCR (portable lowering): the guest's FPCR, and FZ mirrored into MXCSR.FTZ on x86 (SIMD_HW_FZ above).
+SI void rt_fpcr_write(Cpu *c, uint64_t v) {
+    c->fpcr = v & 0x7c00000ull;
+#ifdef SIMD_HW_FZ
+    unsigned csr = _mm_getcsr(), want = (c->fpcr & FPCR_FZ) ? (csr | 0x8000u) & ~0x40u : csr & ~0x8040u;
+    if (want != csr) _mm_setcsr(want);
+#endif
+}
 
 #define F s
 #define T float

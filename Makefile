@@ -95,6 +95,10 @@ endif
 
 # Research build (docs/DEPURACAO.md, LARECOMP_TRACE_STORES): make TRACE=1 B=build/trace GEN=generated-trace gen / -j20 all.
 # Every store of the game reports its instruction to runtime/storetrace.c.
+# A/B build of the FP flush-to-zero path: make NO_HW_FZ=1 B=build/ab-nofz GEN=generated-132 (runtime/simd.h SIMD_HW_FZ).
+ifdef NO_HW_FZ
+GENFLAGS += -DSIMD_NO_HW_FZ
+endif
 ifdef TRACE
 GENFLAGS += -DSTORE_TRACE
 GENTRACE := --trace-stores

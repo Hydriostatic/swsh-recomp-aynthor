@@ -168,7 +168,7 @@ int main(void) {
     while (fread(in, sizeof in, 1, stdin) == 1) {
         static Cpu c;
         memset(&c, 0, sizeof c);
-        c.fpcr = FPCR_VAL;
+        rt_fpcr_write(&c, FPCR_VAL);  // (and FZ into MXCSR on x86, as the game's MSR FPCR does)
         uint32_t k; memcpy(&k, in, 4);
         memcpy(c.x, in + 4, 31 * 8);
         memcpy(&c.sp, in + 4 + 248, 8);
