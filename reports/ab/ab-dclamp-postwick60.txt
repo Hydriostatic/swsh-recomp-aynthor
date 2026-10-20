@@ -1,0 +1,37 @@
+A #1: OK fps 33.93 p95 35.437 p99 37.234 skipped 0
+B #1: OK fps 30.92 p95 53.938 p99 60.63 skipped 0
+A #2: OK fps 30.25 p95 54.455 p99 60.504 skipped 0
+B #2: OK fps 34.81 p95 36.268 p99 38.985 skipped 0
+A #3: OK fps 34.8 p95 35.661 p99 38.795 skipped 0
+B #3: OK fps 35.09 p95 35.776 p99 38.338 skipped 0
+{
+ "A": {
+  "fps_mean": 33.93,
+  "mean_ms": 29.471,
+  "median_ms": 29.714,
+  "p95_ms": 35.661,
+  "p99_ms": 38.795,
+  "over_20ms": 1094,
+  "over_50ms": 0,
+  "skipped_total": 0
+ },
+ "B": {
+  "fps_mean": 34.81,
+  "mean_ms": 28.731,
+  "median_ms": 29.788,
+  "p95_ms": 36.268,
+  "p99_ms": 38.985,
+  "over_20ms": 1094,
+  "over_50ms": 0,
+  "skipped_total": 0
+ },
+ "mean_ms B/A 95%": [
+  0.8618,
+  1.1255
+ ],
+ "p99 B/A 95%": [
+  0.6336,
+  1.6284
+ ]
+}
+reports\ab\20261020-061351-dclamp-postwick60.json

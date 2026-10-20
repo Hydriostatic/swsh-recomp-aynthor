@@ -60,6 +60,14 @@ def sword_instances():
     return [int(x) for x in out.split() if x.strip().isdigit()]
 
 
+def other_runtimes():
+    """Any lasrecomp.exe that is not a Sword 1.3.2 run of ours (another project's tests share the GPU and the CPU)."""
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='lasrecomp.exe'\" | "
+          "Where-Object { $_.CommandLine -notlike '*extracted-132*' } | ForEach-Object { $_.ProcessId }")
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout
+    return [int(x) for x in out.split() if x.strip().isdigit()]
+
+
 def wait_idle(limit_s):
     t0 = time.time()
     while sword_instances():
@@ -130,6 +138,12 @@ def run_once(name, sc, args, run_dir):
         timeout *= 4
     if not wait_idle(120):
         return {"status": "BLOCKED", "reason": "another Sword 1.3.2 instance kept running (the player's?)"}
+    # benchmarks need the machine to themselves: wait (up to LARECOMP_IDLE_WAIT_S, default 600) for other runtimes
+    # to end; a run that still shares the machine is marked contaminated (ab.py / baseline leave it out)
+    t_idle = time.time()
+    while other_runtimes() and time.time() - t_idle < float(os.environ.get("LARECOMP_IDLE_WAIT_S", "600")):
+        time.sleep(5)
+    others_at_start = other_runtimes()
     exe = os.path.join(ROOT, args.exe)
     t0 = time.time()
     before = set(sword_instances())
@@ -156,6 +170,7 @@ def run_once(name, sc, args, run_dir):
         if children == [] and code == 0 and time.time() - t0 < 30:
             code = 0  # (re-executed child finished: its exit is the run's)
     secs = time.time() - t0
+    contaminated = bool(others_at_start or other_runtimes())
     if os.path.isdir(os.path.join(ROOT, "build", "frames")):  # (LARECOMP_SHOT_AT writes build/frames/)
         shutil.move(os.path.join(ROOT, "build", "frames"), frames)
     with open(os.path.join(run_dir, "log.txt"), encoding="utf-8", errors="replace") as f:
@@ -169,7 +184,7 @@ def run_once(name, sc, args, run_dir):
         status = "EXTERNAL-KILL"
     elif status == "OK" and code != 0:
         status = f"EXIT {code}"
-    ft = frame_stats(os.path.join(run_dir, "frametimes.csv"), sc["measure"][0] * k, sc["measure"][1] * k)
+    ft = frame_stats(os.path.join(run_dir, "frametimes.csv"), sc["measure"][0] * k, sc["measure"][1] * k, exclude=shots)
     dll = os.path.join(os.path.dirname(exe), "lasgame.dll")
     meta = {
         "scenario": name, "profile": args.profile, "cache": args.cache, "validation": args.validation or "",
@@ -180,7 +195,8 @@ def run_once(name, sc, args, run_dir):
         "env": {k_: v for k_, v in env.items() if k_.startswith(("LARECOMP_", "VK_"))},
         "started": datetime.datetime.fromtimestamp(t0).isoformat(timespec="seconds"),
     }
-    summary = {"status": status, "exit_code": code, "seconds": round(secs, 1), "frametime": ft, **{
+    summary = {"status": status, "exit_code": code, "seconds": round(secs, 1), "contaminated": contaminated,
+               "frametime": ft, **{
         k_: v for k_, v in info.items() if k_ != "gpu"}}
     with open(os.path.join(run_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=1)
@@ -216,7 +232,7 @@ def main():
             s = run_once(args.scenario, sc, args, run_dir)
         results.append(s)
         ft = s.get("frametime") or {}
-        print(json.dumps({"run": os.path.relpath(run_dir, ROOT), "status": s["status"], "fps": ft.get("fps_mean"),
+        print(json.dumps({"run": os.path.relpath(run_dir, ROOT), "status": s["status"], "contaminated": s.get("contaminated"), "fps": ft.get("fps_mean"),
                           "p99_ms": ft.get("p99_ms"), "skipped": s.get("skipped_total"),
                           "vkval_errors": s.get("vkval_errors")}), flush=True)
     sys.exit(0 if all(r["status"] == "OK" for r in results) else 1)

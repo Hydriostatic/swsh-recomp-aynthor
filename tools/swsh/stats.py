@@ -15,12 +15,16 @@ def _pct(ordered, p):
     return ordered[max(0, math.ceil(len(ordered) * p / 100) - 1)]
 
 
-def frame_stats(path, first=0, last=None):
+def frame_stats(path, first=0, last=None, exclude=()):
+    """exclude: presents to leave out (the one after each test screenshot: saving a 1440p PNG takes ~0.5 s)"""
     if not os.path.exists(path):
         return None
+    skip = set()
+    for e in exclude:
+        skip.update((e, e + 1, e + 2))
     with open(path, newline="") as f:
         samples = [float(r["dt_ms"]) for r in csv.DictReader(f)
-                   if int(r["present"]) >= first and (last is None or int(r["present"]) < last)]
+                   if int(r["present"]) >= first and (last is None or int(r["present"]) < last) and int(r["present"]) not in skip]
     if not samples:
         return None
     o = sorted(samples)

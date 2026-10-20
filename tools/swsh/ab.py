@@ -60,12 +60,13 @@ def main():
             exe, envs = (args.a, args.a_env) if v == "A" else (args.b, args.b_env)
             run_dir, s = run(args.scenario, exe, args.profile, envs, f"ab-{args.label}-{v}")
             ft = s.get("frametime") or {}
-            res[v].append({"run": run_dir, "status": s["status"], "skipped_total": s.get("skipped_total"), **ft})
-            print(f"{v} #{i + 1}: {s['status']} fps {ft.get('fps_mean')} p95 {ft.get('p95_ms')} p99 {ft.get('p99_ms')} "
+            res[v].append({"run": run_dir, "status": s["status"], "skipped_total": s.get("skipped_total"),
+                           "contaminated": s.get("contaminated"), **ft})
+            print(f"{v} #{i + 1}: {s['status']}{' CONTAMINATED' if s.get('contaminated') else ''} fps {ft.get('fps_mean')} p95 {ft.get('p95_ms')} p99 {ft.get('p99_ms')} "
                   f"skipped {s.get('skipped_total')}", flush=True)
     out = {"scenario": args.scenario, "profile": args.profile, "a": args.a, "b": args.b, "a_env": args.a_env,
            "b_env": args.b_env, "runs": res, "when": datetime.datetime.now().isoformat(timespec="seconds")}
-    ok = {v: [r for r in res[v] if r["status"] == "OK" and r.get("mean_ms")] for v in res}
+    ok = {v: [r for r in res[v] if r["status"] == "OK" and r.get("mean_ms") and not r.get("contaminated")] for v in res}
     if all(len(ok[v]) >= 2 for v in ok):
         agg = {}
         for v in ok:

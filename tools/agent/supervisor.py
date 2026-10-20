@@ -176,7 +176,7 @@ def cmd_baseline(args):
                     runs.append({"run": os.path.relpath(run_dir, ROOT) if run_dir else "", **s})
                     print(f"{sc} {prof} {cache} #{i + 1}: {s.get('status')} "
                           f"fps {(s.get('frametime') or {}).get('fps_mean')} p99 {(s.get('frametime') or {}).get('p99_ms')}", flush=True)
-                ok = [r for r in runs if r.get("frametime")]
+                ok = [r for r in runs if r.get("frametime") and not r.get("contaminated")]  # (another runtime shared the machine)
                 agg = {}
                 for k in ("fps_mean", "median_ms", "p95_ms", "p99_ms", "max_ms", "over_50ms"):
                     vals = [r["frametime"][k] for r in ok]

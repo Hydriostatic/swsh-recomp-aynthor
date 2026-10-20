@@ -1,0 +1,2934 @@
+{
+ "when": "2026-10-20T05:23:04",
+ "commit": "04f6458",
+ "rows": [
+  {
+   "scenario": "room",
+   "profile": "1440p30",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\room\\20261020-033744-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.4,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 34.0,
+      "fps_mean": 29.41,
+      "median_ms": 33.313,
+      "p95_ms": 33.73,
+      "p99_ms": 33.89,
+      "p999_ms": 464.633,
+      "max_ms": 464.633,
+      "fps_1pct_low": 29.51,
+      "fps_01pct_low": 2.15,
+      "over_20ms": 599,
+      "over_33ms": 227,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 334,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 4,
+     "translate_ms_total": 184,
+     "spirv_ms_total": 169,
+     "pipeline_ms_total": 118,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3261
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-033938-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.4,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.999,
+      "fps_mean": 29.41,
+      "median_ms": 33.322,
+      "p95_ms": 33.753,
+      "p99_ms": 33.898,
+      "p999_ms": 464.177,
+      "max_ms": 464.177,
+      "fps_1pct_low": 29.5,
+      "fps_01pct_low": 2.15,
+      "over_20ms": 599,
+      "over_33ms": 230,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 334,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 4,
+     "translate_ms_total": 180,
+     "spirv_ms_total": 152,
+     "pipeline_ms_total": 122,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3264
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-034132-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.4,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 34.008,
+      "fps_mean": 29.41,
+      "median_ms": 33.337,
+      "p95_ms": 33.784,
+      "p99_ms": 34.119,
+      "p999_ms": 469.072,
+      "max_ms": 469.072,
+      "fps_1pct_low": 29.31,
+      "fps_01pct_low": 2.13,
+      "over_20ms": 599,
+      "over_33ms": 239,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 334,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 189,
+     "spirv_ms_total": 255,
+     "pipeline_ms_total": 133,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3263
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 29.41,
+     "min": 29.41,
+     "max": 29.41
+    },
+    "median_ms": {
+     "median": 33.322,
+     "min": 33.313,
+     "max": 33.337
+    },
+    "p95_ms": {
+     "median": 33.753,
+     "min": 33.73,
+     "max": 33.784
+    },
+    "p99_ms": {
+     "median": 33.898,
+     "min": 33.89,
+     "max": 34.119
+    },
+    "max_ms": {
+     "median": 464.633,
+     "min": 464.177,
+     "max": 469.072
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    334,
+    334,
+    334
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "groundfloor",
+   "profile": "1440p30",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-034326-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.8,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.985,
+      "fps_mean": 29.42,
+      "median_ms": 33.33,
+      "p95_ms": 33.721,
+      "p99_ms": 33.938,
+      "p999_ms": 455.692,
+      "max_ms": 455.692,
+      "fps_1pct_low": 29.47,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 599,
+      "over_33ms": 216,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 372,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 204,
+     "spirv_ms_total": 211,
+     "pipeline_ms_total": 123,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3253
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-034520-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.9,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.986,
+      "fps_mean": 29.42,
+      "median_ms": 33.338,
+      "p95_ms": 33.782,
+      "p99_ms": 33.947,
+      "p999_ms": 455.942,
+      "max_ms": 455.942,
+      "fps_1pct_low": 29.46,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 599,
+      "over_33ms": 240,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 372,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 218,
+     "spirv_ms_total": 255,
+     "pipeline_ms_total": 142,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3252
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-034715-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.9,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.988,
+      "fps_mean": 29.42,
+      "median_ms": 33.343,
+      "p95_ms": 33.744,
+      "p99_ms": 34.044,
+      "p999_ms": 456.976,
+      "max_ms": 456.976,
+      "fps_1pct_low": 29.37,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 599,
+      "over_33ms": 255,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 372,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 193,
+     "spirv_ms_total": 290,
+     "pipeline_ms_total": 115,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3249
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 29.42,
+     "min": 29.42,
+     "max": 29.42
+    },
+    "median_ms": {
+     "median": 33.338,
+     "min": 33.33,
+     "max": 33.343
+    },
+    "p95_ms": {
+     "median": 33.744,
+     "min": 33.721,
+     "max": 33.782
+    },
+    "p99_ms": {
+     "median": 33.947,
+     "min": 33.938,
+     "max": 34.044
+    },
+    "max_ms": {
+     "median": 455.942,
+     "min": 455.692,
+     "max": 456.976
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    372,
+    372,
+    372
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "postwick",
+   "profile": "1440p30",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\postwick\\20261020-034909-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 115.8,
+     "frametime": {
+      "presents": 550,
+      "mean_ms": 36.361,
+      "fps_mean": 27.5,
+      "median_ms": 33.246,
+      "p95_ms": 36.436,
+      "p99_ms": 39.627,
+      "p999_ms": 904.082,
+      "max_ms": 904.082,
+      "fps_1pct_low": 25.24,
+      "fps_01pct_low": 1.11,
+      "over_20ms": 550,
+      "over_33ms": 250,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 626,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 637,
+     "translate_ms_total": 359,
+     "spirv_ms_total": 514,
+     "pipeline_ms_total": 163,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3239
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-035106-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.8,
+     "frametime": {
+      "presents": 550,
+      "mean_ms": 36.392,
+      "fps_mean": 27.48,
+      "median_ms": 33.245,
+      "p95_ms": 36.401,
+      "p99_ms": 38.402,
+      "p999_ms": 909.62,
+      "max_ms": 909.62,
+      "fps_1pct_low": 26.04,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 550,
+      "over_33ms": 251,
+      "over_50ms": 2
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 626,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 10,
+     "translate_ms_total": 467,
+     "spirv_ms_total": 389,
+     "pipeline_ms_total": 252,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3243
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-035301-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.8,
+     "frametime": {
+      "presents": 550,
+      "mean_ms": 36.376,
+      "fps_mean": 27.49,
+      "median_ms": 33.356,
+      "p95_ms": 35.773,
+      "p99_ms": 37.729,
+      "p999_ms": 905.188,
+      "max_ms": 905.188,
+      "fps_1pct_low": 26.5,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 550,
+      "over_33ms": 268,
+      "over_50ms": 2
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 626,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 9,
+     "translate_ms_total": 432,
+     "spirv_ms_total": 403,
+     "pipeline_ms_total": 287,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3239
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 27.49,
+     "min": 27.48,
+     "max": 27.5
+    },
+    "median_ms": {
+     "median": 33.246,
+     "min": 33.245,
+     "max": 33.356
+    },
+    "p95_ms": {
+     "median": 36.401,
+     "min": 35.773,
+     "max": 36.436
+    },
+    "p99_ms": {
+     "median": 38.402,
+     "min": 37.729,
+     "max": 39.627
+    },
+    "max_ms": {
+     "median": 905.188,
+     "min": 904.082,
+     "max": 909.62
+    },
+    "over_50ms": {
+     "median": 2,
+     "min": 2,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    626,
+    626,
+    626
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "stairs_roundtrip",
+   "profile": "1440p30",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-035456-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.2,
+     "frametime": {
+      "presents": 300,
+      "mean_ms": 37.236,
+      "fps_mean": 26.86,
+      "median_ms": 33.342,
+      "p95_ms": 33.793,
+      "p99_ms": 35.269,
+      "p999_ms": 455.061,
+      "max_ms": 455.061,
+      "fps_1pct_low": 28.35,
+      "fps_01pct_low": 2.2,
+      "over_20ms": 297,
+      "over_33ms": 120,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 417,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 209,
+     "spirv_ms_total": 208,
+     "pipeline_ms_total": 129,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3268
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-035653-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.2,
+     "frametime": {
+      "presents": 300,
+      "mean_ms": 37.242,
+      "fps_mean": 26.85,
+      "median_ms": 33.316,
+      "p95_ms": 33.737,
+      "p99_ms": 34.568,
+      "p999_ms": 456.967,
+      "max_ms": 456.967,
+      "fps_1pct_low": 28.93,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 297,
+      "over_33ms": 101,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 417,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 235,
+     "spirv_ms_total": 265,
+     "pipeline_ms_total": 124,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3267
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-035850-bl-1440p30-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.2,
+     "frametime": {
+      "presents": 300,
+      "mean_ms": 37.24,
+      "fps_mean": 26.85,
+      "median_ms": 33.322,
+      "p95_ms": 33.76,
+      "p99_ms": 34.373,
+      "p999_ms": 456.752,
+      "max_ms": 456.752,
+      "fps_1pct_low": 29.09,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 297,
+      "over_33ms": 118,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 417,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 251,
+     "spirv_ms_total": 196,
+     "pipeline_ms_total": 145,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3267
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 26.85,
+     "min": 26.85,
+     "max": 26.86
+    },
+    "median_ms": {
+     "median": 33.322,
+     "min": 33.316,
+     "max": 33.342
+    },
+    "p95_ms": {
+     "median": 33.76,
+     "min": 33.737,
+     "max": 33.793
+    },
+    "p99_ms": {
+     "median": 34.568,
+     "min": 34.373,
+     "max": 35.269
+    },
+    "max_ms": {
+     "median": 456.752,
+     "min": 455.061,
+     "max": 456.967
+    },
+    "over_50ms": {
+     "median": 3,
+     "min": 3,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    417,
+    417,
+    417
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "room",
+   "profile": "1440p30",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\room\\20261020-040047-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.7,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 34.003,
+      "fps_mean": 29.41,
+      "median_ms": 33.312,
+      "p95_ms": 33.781,
+      "p99_ms": 34.029,
+      "p999_ms": 466.466,
+      "max_ms": 466.466,
+      "fps_1pct_low": 29.39,
+      "fps_01pct_low": 2.14,
+      "over_20ms": 599,
+      "over_33ms": 218,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 305,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1564,
+     "translate_ms_total": 131,
+     "spirv_ms_total": 912,
+     "pipeline_ms_total": 507,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3283
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-040242-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.6,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 34.003,
+      "fps_mean": 29.41,
+      "median_ms": 33.334,
+      "p95_ms": 33.778,
+      "p99_ms": 34.031,
+      "p999_ms": 466.703,
+      "max_ms": 466.703,
+      "fps_1pct_low": 29.39,
+      "fps_01pct_low": 2.14,
+      "over_20ms": 599,
+      "over_33ms": 228,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 305,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1507,
+     "translate_ms_total": 132,
+     "spirv_ms_total": 927,
+     "pipeline_ms_total": 443,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3243
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-040437-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.7,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 34.002,
+      "fps_mean": 29.41,
+      "median_ms": 33.32,
+      "p95_ms": 33.72,
+      "p99_ms": 33.928,
+      "p999_ms": 465.787,
+      "max_ms": 465.787,
+      "fps_1pct_low": 29.47,
+      "fps_01pct_low": 2.15,
+      "over_20ms": 599,
+      "over_33ms": 237,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 305,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1513,
+     "translate_ms_total": 132,
+     "spirv_ms_total": 937,
+     "pipeline_ms_total": 438,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3287
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 29.41,
+     "min": 29.41,
+     "max": 29.41
+    },
+    "median_ms": {
+     "median": 33.32,
+     "min": 33.312,
+     "max": 33.334
+    },
+    "p95_ms": {
+     "median": 33.778,
+     "min": 33.72,
+     "max": 33.781
+    },
+    "p99_ms": {
+     "median": 34.029,
+     "min": 33.928,
+     "max": 34.031
+    },
+    "max_ms": {
+     "median": 466.466,
+     "min": 465.787,
+     "max": 466.703
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    305,
+    305,
+    305
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "groundfloor",
+   "profile": "1440p30",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-040632-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 115.2,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.989,
+      "fps_mean": 29.42,
+      "median_ms": 33.329,
+      "p95_ms": 33.719,
+      "p99_ms": 33.851,
+      "p999_ms": 457.562,
+      "max_ms": 457.562,
+      "fps_1pct_low": 29.54,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 599,
+      "over_33ms": 232,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 361,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1702,
+     "translate_ms_total": 154,
+     "spirv_ms_total": 1030,
+     "pipeline_ms_total": 516,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 3243
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-040828-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 115.2,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.99,
+      "fps_mean": 29.42,
+      "median_ms": 33.322,
+      "p95_ms": 33.732,
+      "p99_ms": 33.828,
+      "p999_ms": 458.49,
+      "max_ms": 458.49,
+      "fps_1pct_low": 29.56,
+      "fps_01pct_low": 2.18,
+      "over_20ms": 599,
+      "over_33ms": 238,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 361,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1735,
+     "translate_ms_total": 152,
+     "spirv_ms_total": 1059,
+     "pipeline_ms_total": 516,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3273
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-041024-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 115.3,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 33.988,
+      "fps_mean": 29.42,
+      "median_ms": 33.31,
+      "p95_ms": 33.733,
+      "p99_ms": 33.833,
+      "p999_ms": 457.178,
+      "max_ms": 457.178,
+      "fps_1pct_low": 29.56,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 599,
+      "over_33ms": 214,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 361,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1729,
+     "translate_ms_total": 153,
+     "spirv_ms_total": 1053,
+     "pipeline_ms_total": 514,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3269
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 29.42,
+     "min": 29.42,
+     "max": 29.42
+    },
+    "median_ms": {
+     "median": 33.322,
+     "min": 33.31,
+     "max": 33.329
+    },
+    "p95_ms": {
+     "median": 33.732,
+     "min": 33.719,
+     "max": 33.733
+    },
+    "p99_ms": {
+     "median": 33.833,
+     "min": 33.828,
+     "max": 33.851
+    },
+    "max_ms": {
+     "median": 457.562,
+     "min": 457.178,
+     "max": 458.49
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    361,
+    361,
+    361
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "postwick",
+   "profile": "1440p30",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\postwick\\20261020-041220-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 117.8,
+     "frametime": {
+      "presents": 550,
+      "mean_ms": 36.373,
+      "fps_mean": 27.49,
+      "median_ms": 33.344,
+      "p95_ms": 36.17,
+      "p99_ms": 38.336,
+      "p999_ms": 908.795,
+      "max_ms": 908.795,
+      "fps_1pct_low": 26.08,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 550,
+      "over_33ms": 269,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 602,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 3468,
+     "translate_ms_total": 319,
+     "spirv_ms_total": 2080,
+     "pipeline_ms_total": 1061,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 3299
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-041418-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 117.8,
+     "frametime": {
+      "presents": 550,
+      "mean_ms": 36.384,
+      "fps_mean": 27.48,
+      "median_ms": 33.355,
+      "p95_ms": 36.206,
+      "p99_ms": 40.208,
+      "p999_ms": 912.613,
+      "max_ms": 912.613,
+      "fps_1pct_low": 24.87,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 550,
+      "over_33ms": 269,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 602,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 3447,
+     "translate_ms_total": 317,
+     "spirv_ms_total": 2094,
+     "pipeline_ms_total": 1025,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 3239
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-041616-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 118.0,
+     "frametime": {
+      "presents": 550,
+      "mean_ms": 36.372,
+      "fps_mean": 27.49,
+      "median_ms": 33.259,
+      "p95_ms": 35.972,
+      "p99_ms": 38.016,
+      "p999_ms": 909.91,
+      "max_ms": 909.91,
+      "fps_1pct_low": 26.3,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 550,
+      "over_33ms": 252,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 602,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 3496,
+     "translate_ms_total": 318,
+     "spirv_ms_total": 2169,
+     "pipeline_ms_total": 999,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 3299
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 27.49,
+     "min": 27.48,
+     "max": 27.49
+    },
+    "median_ms": {
+     "median": 33.344,
+     "min": 33.259,
+     "max": 33.355
+    },
+    "p95_ms": {
+     "median": 36.17,
+     "min": 35.972,
+     "max": 36.206
+    },
+    "p99_ms": {
+     "median": 38.336,
+     "min": 38.016,
+     "max": 40.208
+    },
+    "max_ms": {
+     "median": 909.91,
+     "min": 908.795,
+     "max": 912.613
+    },
+    "over_50ms": {
+     "median": 3,
+     "min": 3,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    602,
+    602,
+    602
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "stairs_roundtrip",
+   "profile": "1440p30",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-041815-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 117.7,
+     "frametime": {
+      "presents": 300,
+      "mean_ms": 37.244,
+      "fps_mean": 26.85,
+      "median_ms": 33.312,
+      "p95_ms": 33.766,
+      "p99_ms": 35.15,
+      "p999_ms": 458.015,
+      "max_ms": 458.015,
+      "fps_1pct_low": 28.45,
+      "fps_01pct_low": 2.18,
+      "over_20ms": 297,
+      "over_33ms": 117,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 393,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1911,
+     "translate_ms_total": 170,
+     "spirv_ms_total": 1162,
+     "pipeline_ms_total": 571,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 3290
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-042013-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 117.7,
+     "frametime": {
+      "presents": 300,
+      "mean_ms": 37.268,
+      "fps_mean": 26.83,
+      "median_ms": 33.327,
+      "p95_ms": 33.736,
+      "p99_ms": 34.114,
+      "p999_ms": 459.014,
+      "max_ms": 459.014,
+      "fps_1pct_low": 29.31,
+      "fps_01pct_low": 2.18,
+      "over_20ms": 297,
+      "over_33ms": 121,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 393,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1884,
+     "translate_ms_total": 169,
+     "spirv_ms_total": 1147,
+     "pipeline_ms_total": 563,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 3290
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-042211-bl-1440p30-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 117.7,
+     "frametime": {
+      "presents": 300,
+      "mean_ms": 37.243,
+      "fps_mean": 26.85,
+      "median_ms": 33.317,
+      "p95_ms": 33.726,
+      "p99_ms": 34.711,
+      "p999_ms": 456.769,
+      "max_ms": 456.769,
+      "fps_1pct_low": 28.81,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 297,
+      "over_33ms": 104,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 393,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1912,
+     "translate_ms_total": 170,
+     "spirv_ms_total": 1159,
+     "pipeline_ms_total": 573,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 3268
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 26.85,
+     "min": 26.83,
+     "max": 26.85
+    },
+    "median_ms": {
+     "median": 33.317,
+     "min": 33.312,
+     "max": 33.327
+    },
+    "p95_ms": {
+     "median": 33.736,
+     "min": 33.726,
+     "max": 33.766
+    },
+    "p99_ms": {
+     "median": 34.711,
+     "min": 34.114,
+     "max": 35.15
+    },
+    "max_ms": {
+     "median": 458.015,
+     "min": 456.769,
+     "max": 459.014
+    },
+    "over_50ms": {
+     "median": 3,
+     "min": 3,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    393,
+    393,
+    393
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "room",
+   "profile": "1440p60",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\room\\20261020-042410-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.5,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.029,
+      "fps_mean": 58.72,
+      "median_ms": 16.628,
+      "p95_ms": 17.126,
+      "p99_ms": 17.913,
+      "p999_ms": 19.837,
+      "max_ms": 465.823,
+      "fps_1pct_low": 55.82,
+      "fps_01pct_low": 50.41,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 353,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 201,
+     "spirv_ms_total": 260,
+     "pipeline_ms_total": 105,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 6518
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-042604-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.5,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.026,
+      "fps_mean": 58.73,
+      "median_ms": 16.671,
+      "p95_ms": 17.111,
+      "p99_ms": 17.891,
+      "p999_ms": 18.893,
+      "max_ms": 462.775,
+      "fps_1pct_low": 55.89,
+      "fps_01pct_low": 52.93,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 353,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 196,
+     "spirv_ms_total": 261,
+     "pipeline_ms_total": 124,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 6516
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-042758-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.5,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.029,
+      "fps_mean": 58.72,
+      "median_ms": 16.646,
+      "p95_ms": 17.107,
+      "p99_ms": 17.585,
+      "p999_ms": 18.477,
+      "max_ms": 465.51,
+      "fps_1pct_low": 56.87,
+      "fps_01pct_low": 54.12,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 353,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 198,
+     "spirv_ms_total": 188,
+     "pipeline_ms_total": 128,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 6516
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 58.72,
+     "min": 58.72,
+     "max": 58.73
+    },
+    "median_ms": {
+     "median": 16.646,
+     "min": 16.628,
+     "max": 16.671
+    },
+    "p95_ms": {
+     "median": 17.111,
+     "min": 17.107,
+     "max": 17.126
+    },
+    "p99_ms": {
+     "median": 17.891,
+     "min": 17.585,
+     "max": 17.913
+    },
+    "max_ms": {
+     "median": 465.51,
+     "min": 462.775,
+     "max": 465.823
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    353,
+    353,
+    353
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "groundfloor",
+   "profile": "1440p60",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-042952-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.9,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.022,
+      "fps_mean": 58.75,
+      "median_ms": 16.624,
+      "p95_ms": 17.133,
+      "p99_ms": 18.334,
+      "p999_ms": 19.623,
+      "max_ms": 457.422,
+      "fps_1pct_low": 54.54,
+      "fps_01pct_low": 50.96,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 391,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 4,
+     "translate_ms_total": 218,
+     "spirv_ms_total": 259,
+     "pipeline_ms_total": 130,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 6498
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-043146-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.9,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.02,
+      "fps_mean": 58.75,
+      "median_ms": 16.641,
+      "p95_ms": 17.13,
+      "p99_ms": 18.317,
+      "p999_ms": 19.345,
+      "max_ms": 455.603,
+      "fps_1pct_low": 54.59,
+      "fps_01pct_low": 51.69,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 391,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 222,
+     "spirv_ms_total": 219,
+     "pipeline_ms_total": 127,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 6498
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-043341-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 113.9,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.02,
+      "fps_mean": 58.75,
+      "median_ms": 16.651,
+      "p95_ms": 17.12,
+      "p99_ms": 18.183,
+      "p999_ms": 19.259,
+      "max_ms": 455.798,
+      "fps_1pct_low": 54.99,
+      "fps_01pct_low": 51.92,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 391,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 214,
+     "spirv_ms_total": 182,
+     "pipeline_ms_total": 129,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 54,
+     "last_frame": 6498
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 58.75,
+     "min": 58.75,
+     "max": 58.75
+    },
+    "median_ms": {
+     "median": 16.641,
+     "min": 16.624,
+     "max": 16.651
+    },
+    "p95_ms": {
+     "median": 17.13,
+     "min": 17.12,
+     "max": 17.133
+    },
+    "p99_ms": {
+     "median": 18.317,
+     "min": 18.183,
+     "max": 18.334
+    },
+    "max_ms": {
+     "median": 455.798,
+     "min": 455.603,
+     "max": 457.422
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    391,
+    391,
+    391
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "postwick",
+   "profile": "1440p60",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\postwick\\20261020-043535-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 168.0,
+     "frametime": {
+      "presents": 1100,
+      "mean_ms": 25.616,
+      "fps_mean": 39.04,
+      "median_ms": 26.09,
+      "p95_ms": 27.477,
+      "p99_ms": 29.103,
+      "p999_ms": 866.78,
+      "max_ms": 966.191,
+      "fps_1pct_low": 34.36,
+      "fps_01pct_low": 1.15,
+      "over_20ms": 1082,
+      "over_33ms": 2,
+      "over_50ms": 2
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 626,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 9,
+     "translate_ms_total": 442,
+     "spirv_ms_total": 444,
+     "pipeline_ms_total": 248,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 81,
+     "last_frame": 6591
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-043824-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 168.0,
+     "frametime": {
+      "presents": 1100,
+      "mean_ms": 25.689,
+      "fps_mean": 38.93,
+      "median_ms": 26.196,
+      "p95_ms": 27.51,
+      "p99_ms": 28.619,
+      "p999_ms": 864.49,
+      "max_ms": 961.711,
+      "fps_1pct_low": 34.94,
+      "fps_01pct_low": 1.16,
+      "over_20ms": 1093,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 626,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 8,
+     "translate_ms_total": 453,
+     "spirv_ms_total": 332,
+     "pipeline_ms_total": 241,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 81,
+     "last_frame": 6591
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-044112-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 168.2,
+     "frametime": {
+      "presents": 1100,
+      "mean_ms": 25.594,
+      "fps_mean": 39.07,
+      "median_ms": 26.125,
+      "p95_ms": 27.523,
+      "p99_ms": 28.635,
+      "p999_ms": 860.671,
+      "max_ms": 966.434,
+      "fps_1pct_low": 34.92,
+      "fps_01pct_low": 1.16,
+      "over_20ms": 1057,
+      "over_33ms": 2,
+      "over_50ms": 2
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 626,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 9,
+     "translate_ms_total": 457,
+     "spirv_ms_total": 364,
+     "pipeline_ms_total": 256,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 81,
+     "last_frame": 6593
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 39.04,
+     "min": 38.93,
+     "max": 39.07
+    },
+    "median_ms": {
+     "median": 26.125,
+     "min": 26.09,
+     "max": 26.196
+    },
+    "p95_ms": {
+     "median": 27.51,
+     "min": 27.477,
+     "max": 27.523
+    },
+    "p99_ms": {
+     "median": 28.635,
+     "min": 28.619,
+     "max": 29.103
+    },
+    "max_ms": {
+     "median": 966.191,
+     "min": 961.711,
+     "max": 966.434
+    },
+    "over_50ms": {
+     "median": 2,
+     "min": 2,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    626,
+    626,
+    626
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "stairs_roundtrip",
+   "profile": "1440p60",
+   "cache": "warm",
+   "runs": [
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-044401-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.4,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 18.76,
+      "fps_mean": 53.3,
+      "median_ms": 16.64,
+      "p95_ms": 17.117,
+      "p99_ms": 19.062,
+      "p999_ms": 450.743,
+      "max_ms": 450.743,
+      "fps_1pct_low": 52.46,
+      "fps_01pct_low": 2.22,
+      "over_20ms": 4,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 417,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 236,
+     "spirv_ms_total": 295,
+     "pipeline_ms_total": 133,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6512
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-044558-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.4,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 18.771,
+      "fps_mean": 53.27,
+      "median_ms": 16.645,
+      "p95_ms": 17.282,
+      "p99_ms": 18.511,
+      "p999_ms": 452.419,
+      "max_ms": 452.419,
+      "fps_1pct_low": 54.02,
+      "fps_01pct_low": 2.21,
+      "over_20ms": 3,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 417,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 4,
+     "translate_ms_total": 234,
+     "spirv_ms_total": 220,
+     "pipeline_ms_total": 130,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6512
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-044755-bl-1440p60-warm-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.5,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 18.773,
+      "fps_mean": 53.27,
+      "median_ms": 16.646,
+      "p95_ms": 17.271,
+      "p99_ms": 18.546,
+      "p999_ms": 453.716,
+      "max_ms": 453.716,
+      "fps_1pct_low": 53.92,
+      "fps_01pct_low": 2.2,
+      "over_20ms": 3,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 417,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 3,
+     "translate_ms_total": 245,
+     "spirv_ms_total": 272,
+     "pipeline_ms_total": 138,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6512
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 53.27,
+     "min": 53.27,
+     "max": 53.3
+    },
+    "median_ms": {
+     "median": 16.645,
+     "min": 16.64,
+     "max": 16.646
+    },
+    "p95_ms": {
+     "median": 17.271,
+     "min": 17.117,
+     "max": 17.282
+    },
+    "p99_ms": {
+     "median": 18.546,
+     "min": 18.511,
+     "max": 19.062
+    },
+    "max_ms": {
+     "median": 452.419,
+     "min": 450.743,
+     "max": 453.716
+    },
+    "over_50ms": {
+     "median": 3,
+     "min": 3,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    417,
+    417,
+    417
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "room",
+   "profile": "1440p60",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\room\\20261020-044952-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.8,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.027,
+      "fps_mean": 58.73,
+      "median_ms": 16.628,
+      "p95_ms": 17.136,
+      "p99_ms": 17.812,
+      "p999_ms": 19.236,
+      "max_ms": 464.03,
+      "fps_1pct_low": 56.14,
+      "fps_01pct_low": 51.99,
+      "over_20ms": 1,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 305,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1483,
+     "translate_ms_total": 130,
+     "spirv_ms_total": 902,
+     "pipeline_ms_total": 444,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6554
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-045147-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.9,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.032,
+      "fps_mean": 58.71,
+      "median_ms": 16.649,
+      "p95_ms": 17.39,
+      "p99_ms": 18.659,
+      "p999_ms": 22.348,
+      "max_ms": 470.837,
+      "fps_1pct_low": 53.59,
+      "fps_01pct_low": 44.75,
+      "over_20ms": 7,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 305,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1514,
+     "translate_ms_total": 132,
+     "spirv_ms_total": 931,
+     "pipeline_ms_total": 444,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6554
+    },
+    {
+     "run": "reports\\runs\\room\\20261020-045343-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 114.9,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.03,
+      "fps_mean": 58.72,
+      "median_ms": 16.653,
+      "p95_ms": 17.136,
+      "p99_ms": 18.096,
+      "p999_ms": 22.878,
+      "max_ms": 467.491,
+      "fps_1pct_low": 55.26,
+      "fps_01pct_low": 43.71,
+      "over_20ms": 2,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 305,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1527,
+     "translate_ms_total": 132,
+     "spirv_ms_total": 930,
+     "pipeline_ms_total": 457,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6555
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 58.72,
+     "min": 58.71,
+     "max": 58.73
+    },
+    "median_ms": {
+     "median": 16.649,
+     "min": 16.628,
+     "max": 16.653
+    },
+    "p95_ms": {
+     "median": 17.136,
+     "min": 17.136,
+     "max": 17.39
+    },
+    "p99_ms": {
+     "median": 18.096,
+     "min": 17.812,
+     "max": 18.659
+    },
+    "max_ms": {
+     "median": 467.491,
+     "min": 464.03,
+     "max": 470.837
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    305,
+    305,
+    305
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "groundfloor",
+   "profile": "1440p60",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-045538-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.2,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.2,
+      "fps_mean": 58.14,
+      "median_ms": 16.677,
+      "p95_ms": 19.108,
+      "p99_ms": 24.498,
+      "p999_ms": 30.267,
+      "max_ms": 460.636,
+      "fps_1pct_low": 40.82,
+      "fps_01pct_low": 33.04,
+      "over_20ms": 45,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 361,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1970,
+     "translate_ms_total": 156,
+     "spirv_ms_total": 1166,
+     "pipeline_ms_total": 636,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6518
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-045735-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.3,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.026,
+      "fps_mean": 58.74,
+      "median_ms": 16.646,
+      "p95_ms": 17.907,
+      "p99_ms": 19.274,
+      "p999_ms": 22.586,
+      "max_ms": 460.458,
+      "fps_1pct_low": 51.88,
+      "fps_01pct_low": 44.27,
+      "over_20ms": 6,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 361,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 1909,
+     "translate_ms_total": 157,
+     "spirv_ms_total": 1114,
+     "pipeline_ms_total": 628,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6517
+    },
+    {
+     "run": "reports\\runs\\groundfloor\\20261020-045932-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 116.1,
+     "frametime": {
+      "presents": 1200,
+      "mean_ms": 17.033,
+      "fps_mean": 58.71,
+      "median_ms": 16.639,
+      "p95_ms": 18.361,
+      "p99_ms": 19.511,
+      "p999_ms": 22.617,
+      "max_ms": 469.294,
+      "fps_1pct_low": 51.25,
+      "fps_01pct_low": 44.21,
+      "over_20ms": 9,
+      "over_33ms": 1,
+      "over_50ms": 1
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 361,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 2109,
+     "translate_ms_total": 159,
+     "spirv_ms_total": 1282,
+     "pipeline_ms_total": 658,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 55,
+     "last_frame": 6521
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 58.71,
+     "min": 58.14,
+     "max": 58.74
+    },
+    "median_ms": {
+     "median": 16.646,
+     "min": 16.639,
+     "max": 16.677
+    },
+    "p95_ms": {
+     "median": 18.361,
+     "min": 17.907,
+     "max": 19.108
+    },
+    "p99_ms": {
+     "median": 19.511,
+     "min": 19.274,
+     "max": 24.498
+    },
+    "max_ms": {
+     "median": 460.636,
+     "min": 460.458,
+     "max": 469.294
+    },
+    "over_50ms": {
+     "median": 1,
+     "min": 1,
+     "max": 1
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    361,
+    361,
+    361
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "postwick",
+   "profile": "1440p60",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\postwick\\20261020-050129-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 295.7,
+     "frametime": {
+      "presents": 1100,
+      "mean_ms": 46.21,
+      "fps_mean": 21.64,
+      "median_ms": 46.124,
+      "p95_ms": 73.667,
+      "p99_ms": 82.935,
+      "p999_ms": 909.641,
+      "max_ms": 1010.84,
+      "fps_1pct_low": 12.06,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 1100,
+      "over_33ms": 696,
+      "over_50ms": 399
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 602,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 3964,
+     "translate_ms_total": 328,
+     "spirv_ms_total": 2394,
+     "pipeline_ms_total": 1229,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 142,
+     "last_frame": 6559
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-050625-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 304.3,
+     "frametime": {
+      "presents": 1100,
+      "mean_ms": 57.293,
+      "fps_mean": 17.45,
+      "median_ms": 59.83,
+      "p95_ms": 92.19,
+      "p99_ms": 98.99,
+      "p999_ms": 907.268,
+      "max_ms": 1044.955,
+      "fps_1pct_low": 10.1,
+      "fps_01pct_low": 1.1,
+      "over_20ms": 1100,
+      "over_33ms": 832,
+      "over_50ms": 791
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 602,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 3682,
+     "translate_ms_total": 320,
+     "spirv_ms_total": 2171,
+     "pipeline_ms_total": 1183,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 147,
+     "last_frame": 6593
+    },
+    {
+     "run": "reports\\runs\\postwick\\20261020-051130-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 335.5,
+     "frametime": {
+      "presents": 1100,
+      "mean_ms": 52.098,
+      "fps_mean": 19.19,
+      "median_ms": 53.672,
+      "p95_ms": 81.024,
+      "p99_ms": 95.277,
+      "p999_ms": 913.296,
+      "max_ms": 1019.679,
+      "fps_1pct_low": 10.5,
+      "fps_01pct_low": 1.09,
+      "over_20ms": 1100,
+      "over_33ms": 785,
+      "over_50ms": 693
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 602,
+     "compiles_window": 2,
+     "shader_wait_ms_total": 3655,
+     "translate_ms_total": 322,
+     "spirv_ms_total": 2191,
+     "pipeline_ms_total": 1132,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 162,
+     "last_frame": 6588
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 19.19,
+     "min": 17.45,
+     "max": 21.64
+    },
+    "median_ms": {
+     "median": 53.672,
+     "min": 46.124,
+     "max": 59.83
+    },
+    "p95_ms": {
+     "median": 81.024,
+     "min": 73.667,
+     "max": 92.19
+    },
+    "p99_ms": {
+     "median": 95.277,
+     "min": 82.935,
+     "max": 98.99
+    },
+    "max_ms": {
+     "median": 1019.679,
+     "min": 1010.84,
+     "max": 1044.955
+    },
+    "over_50ms": {
+     "median": 693,
+     "min": 399,
+     "max": 791
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    602,
+    602,
+    602
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  },
+  {
+   "scenario": "stairs_roundtrip",
+   "profile": "1440p60",
+   "cache": "cold",
+   "runs": [
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-051706-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 118.7,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 18.795,
+      "fps_mean": 53.21,
+      "median_ms": 16.734,
+      "p95_ms": 18.263,
+      "p99_ms": 19.016,
+      "p999_ms": 458.423,
+      "max_ms": 458.423,
+      "fps_1pct_low": 52.59,
+      "fps_01pct_low": 2.18,
+      "over_20ms": 3,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 393,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 2212,
+     "translate_ms_total": 176,
+     "spirv_ms_total": 1300,
+     "pipeline_ms_total": 724,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 6532
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-051905-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 118.9,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 18.792,
+      "fps_mean": 53.22,
+      "median_ms": 16.648,
+      "p95_ms": 18.208,
+      "p99_ms": 19.179,
+      "p999_ms": 456.499,
+      "max_ms": 456.499,
+      "fps_1pct_low": 52.14,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 3,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 393,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 2250,
+     "translate_ms_total": 176,
+     "spirv_ms_total": 1338,
+     "pipeline_ms_total": 727,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 6523
+    },
+    {
+     "run": "reports\\runs\\stairs_roundtrip\\20261020-052105-bl-1440p60-cold-1",
+     "status": "OK",
+     "exit_code": 0,
+     "seconds": 118.7,
+     "frametime": {
+      "presents": 600,
+      "mean_ms": 18.775,
+      "fps_mean": 53.26,
+      "median_ms": 16.652,
+      "p95_ms": 17.765,
+      "p99_ms": 19.304,
+      "p999_ms": 455.668,
+      "max_ms": 455.668,
+      "fps_1pct_low": 51.8,
+      "fps_01pct_low": 2.19,
+      "over_20ms": 5,
+      "over_33ms": 3,
+      "over_50ms": 3
+     },
+     "crashes": 0,
+     "skipped_total": 0,
+     "skipped_window": 0,
+     "skip_why_total": {
+      "noprog": 0,
+      "compiling": 0,
+      "failed": 0,
+      "noobj": 0,
+      "mode": 0,
+      "pipe_building": 0,
+      "pipe_failed": 0
+     },
+     "compiles_total": 393,
+     "compiles_window": 0,
+     "shader_wait_ms_total": 2141,
+     "translate_ms_total": 174,
+     "spirv_ms_total": 1273,
+     "pipeline_ms_total": 688,
+     "vkval_errors": 0,
+     "vkval_warnings": 0,
+     "stat_lines": 56,
+     "last_frame": 6522
+    }
+   ],
+   "aggregate": {
+    "fps_mean": {
+     "median": 53.22,
+     "min": 53.21,
+     "max": 53.26
+    },
+    "median_ms": {
+     "median": 16.652,
+     "min": 16.648,
+     "max": 16.734
+    },
+    "p95_ms": {
+     "median": 18.208,
+     "min": 17.765,
+     "max": 18.263
+    },
+    "p99_ms": {
+     "median": 19.179,
+     "min": 19.016,
+     "max": 19.304
+    },
+    "max_ms": {
+     "median": 456.499,
+     "min": 455.668,
+     "max": 458.423
+    },
+    "over_50ms": {
+     "median": 3,
+     "min": 3,
+     "max": 3
+    }
+   },
+   "skipped_total": [
+    0,
+    0,
+    0
+   ],
+   "compiles_total": [
+    393,
+    393,
+    393
+   ],
+   "statuses": [
+    "OK",
+    "OK",
+    "OK"
+   ]
+  }
+ ]
+}
