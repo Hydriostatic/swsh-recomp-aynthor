@@ -1,63 +1,47 @@
-# Ciclo 2: teste diferencial do lifter, validação Vulkan, TEXINT, identidade de shader no draw, relógio fixo
+# Ciclo 3 (interrompido): mundo aberto a 60 fps
 
-```
-CICLO: 2
+Relatório completo: `reports/cycles/003.md`. Parado em 20/10/2026 ~08:15 porque o usuário precisou usar o PC.
 
-SUBSISTEMA: recompilador (lifter), renderer (texturas inteiras, identidade de programa), testes (relógio, re-exec)
-PROBLEMA:
-  DIFFTEST  sem teste diferencial das instruções
-  VKVAL     validação nunca rodada nos cenários
-  TEXINT    texturas inteiras amostradas como float (achado pela validação)
-  G4        tapete preto voltou em 1 de 9 rodadas
-  TESTES    iluminação dependente da hora real e filho re-executado invisível ao harness
-SEVERIDADE: P1 (fidelidade) / P2 (infraestrutura de teste)
+## Estado do código (IMPORTANTE)
+Último commit: `805c64e`. **Não commitado** (no working tree, compila; o build em `build/v132` já contém tudo):
+- `runtime/nvn/vulkan/exec.c`: cópias de buffer inline (`gpu_may_touch`), readbacks adiados (`g_rb`,
+  `readback_sync_range`, `readbacks_done`, superseded), estatísticas novas.
+- `runtime/nvn/vulkan/textures.c`: `readback_sync_range` no `upload_texture`.
+- `runtime/nvn/vulkan/renderthread.c`: `LARECOMP_RT_PROF`.
+- `runtime/sampler.c` (novo, não rastreado) + `runtime/kernel.c`: `LARECOMP_SAMPLE`.
+- `tests/scenarios/openworld.json` e `stairs_rug.json` (não rastreados), `.agent/test-matrix.json`.
+- `reports/baseline-dod-run.txt`, `reports/stab60-1.txt` (não rastreados, saídas de rodadas).
 
-EVIDÊNCIA INICIAL:
-  - validação (escada): ERROR VUID-vkCmdDrawIndexed-format-07753 e -magFilter-04553 (R16G16B16A16_UINT amostrado por
-    sampler2D com filtro linear); SYNC-HAZARD-PRESENT-AFTER-WRITE; a camada MSYS2 cai na própria thread
-  - G4 preto em reports/runs/stairs/20261020-024611-regress-1 com o build que já usava chave por conteúdo
-  - quarto: luma 123,0 (00:45 e 14:00) x 125,4 (03:20), mesma cena
+Antes de commitar: rodar as regressões e a checagem visual abaixo (passos 1-2).
 
-CAUSA RAIZ:
-  TEXINT  o código Maxwell não diz o tipo da textura; o tradutor declarava tudo float
-  G4      hash do conteúdo tirado no nvnProgramSetShaders (thread do jogo) antes de a cópia de GPU do código rodar
-          (CopyBufferToBuffer = memmove na render thread, em ordem): hash do código antigo -> tradução antiga
-  luma    o jogo ilumina pela hora do dia (relógio do host)
-  re-exec main.c reserve_guest_space relança o processo; o pai sai com 0 e o filho segue
+## Números atuais (1440p60, mundo aberto, antes da batalha)
+| versão | fps |
+|---|---|
+| 805c64e (flush em toda CopyBufferToBuffer) | ~33 |
+| + cópias inline | ~46-47 |
+| + readbacks adiados / superseded | ~46-49 (espera da GPU 545 -> 5 ms a cada 2 s) |
 
-ALTERAÇÕES REALIZADAS:
-  - tests/runtime/difftest/difftest.py (Unicorn como oráculo; implementação própria, técnica OpenSmash / mk8)
-  - TEXINT: máscaras tex_uint / tex_sint na ShaderKey por draw, usampler / isampler, bits crus, sampler NEAREST
-    (LARECOMP_TEXINT=0)
-  - identidade do programa: hash do código na render thread, no draw; cache por endereço invalidado por cópias sobre
-    o código e por SetShaders; índice por página de 64 KB
-  - arquivo de receitas com o layout no nome
-  - LARECOMP_FIXED_TIME (scenario.py usa 20/10/2026 14:00); harness acompanha o filho re-executado
-  commits: 3001d97, 5d22d4a
+Render thread ocupada ~40%; o jogo quase não espera por ela (`[rtprof]`). O gargalo agora é a CPU das threads do
+jogo (16/17/18 trabalham em cadeia, pelo `LARECOMP_PROF_SVC`).
 
-BUILD: make B=build/v132 GEN=generated-132 (sem avisos)
+## Como continuar
+1. **Correção das mudanças:** `python tools/agent/supervisor.py regress` e comparar o quadro do openworld (shot 1030)
+   com `--env LARECOMP_COPY_FLUSH=1 --env LARECOMP_READBACK_SYNC=1` (imgcheck / SSIM, relógio fixo). Se ok, commitar
+   em partes: `perf(vulkan): ...copies inline`, `perf(vulkan): deferred readbacks`, `feat(tools): rt prof + sampler`.
+2. **Perfil da CPU do jogo:** 
+   `python tools/swsh/scenario.py openworld --profile 1440p60 --label ow-sample --env LARECOMP_SAMPLE=1450:1650 --env LARECOMP_SAMPLE_OUT=D:/projects/swsh-recomp/reports/profiling/ow-sample.txt`
+   (a janela 1450:1800 não terminou antes de o harness sair: renderer_game_frame anda atrás do contador de presents).
+   Melhoria a fazer no sampler: escrever o relatório também na saída do processo. Depois, olhar as funções f_<addr>
+   do topo inclusivo das threads 16/17/18 (HLE caro? spinlocks? funções do lifter lentas?).
+3. **G3 / 60MODE-ANIM:** o usuário ainda vê a plateia piscando a 60 fps. Fazer a animação da plateia andar a 30 Hz
+   no modo 60 (achar o contador de quadros da animação - FNPROF / ganchos em runtime/fnhook.c).
+4. Pendências antigas: LEAK (~4-5 MB/min), PRESENT-SYNC, VKVAL (camada do LunarG SDK), difftest de desvios e sdk,
+   STAB com sessões reais do jogador (não com loop em quadrado - o usuário descartou).
 
-TESTES EXECUTADOS:
-  - difftest main: 2.995 formatos x 8 estados = 0 diferenças (controle negativo --inject-mismatch detectado 4/4)
-  - validação básica na escada depois do TEXINT: E = 0 até a queda da camada (antes: format-07753, magFilter-04553)
-  - escada 8x (stairs_rug, quadros 2754-2799 a cada 3): tapete preto em 0 de 8 (antes 1 de 9); 13 hashes de código
-    invalidados por rodada (código trocado no mesmo endereço durante o jogo)
-  - quarto com relógio fixo: SSIM entre rodadas 0,9994-0,9995, luma 123,0 = baseline
-  - regressões room + stairs: todas PASSOU
-
-RESULTADOS:
-  - lifter: nenhuma divergência nas instruções sem memória do main (loads / stores / desvios: NÃO TESTADO)
-  - G4 corrigido (com a ressalva estatística: 0/8 x 1/9 ainda pode ser acaso em ~39%; o mecanismo foi observado)
-RENDERIZAÇÃO: sem regressão visual nos cenários com relógio fixo
-SHADERS: texturas inteiras com tipo correto; zero draws pulados
-FPS / FRAMETIME: em medição (baseline 3x3 da DoD em andamento)
-CPU / GPU: não medido
-MEMÓRIA: não medido
-VALIDATION ERRORS: ERROR restante: SYNC-HAZARD-PRESENT-AFTER-WRITE (a investigar); camada MSYS2 instável (BLOQUEIO
-  parcial: precisa da camada do Vulkan SDK)
-
-REGRESSÕES: nenhuma conhecida
-STATUS: CORRIGIDO (TEXINT, G4) / PARCIAL (VKVAL)
-
-PRÓXIMA AÇÃO: baseline DoD (48 rodadas) -> PERF60; G3 (título); difftest com memória e sdk; SYNC-HAZARD do present.
-```
+## Cuidados
+- Ao medir, conferir pela captura que o quadro é o overworld e não uma batalha (um Pokémon selvagem inicia batalha
+  ~45 s depois do load; no modo 60 por volta do present 2200).
+- `"contaminated": true` = o letsgo-recomp estava rodando junto; repetir A/Bs com a máquina livre.
+- Heredocs do Git Bash transformam `\\n` dentro de scripts Python em quebra de linha real em strings C: editar C com
+  a ferramenta Edit ou scripts gravados no scratchpad.
+- `make ... | grep` não para o script quando a compilação falha: confira se não houve `error` antes de medir.

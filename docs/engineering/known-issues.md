@@ -7,9 +7,9 @@ O estado vivo fica em `.agent/backlog.json` (`python tools/agent/supervisor.py s
 |---|---|---|---|---|
 | VKVAL | P1 | Validation layers ainda não rodadas nos cenários | — | NÃO TESTADO |
 | G1 | P1 | Manchas brancas ao entrar andando no quarto | `docs/DIAGNOSTICO-SWSH.md`; `tests/scenarios/room_enter.json` não reproduz (nem com barrier desligado nem no modo antigo de pular draws) | BLOQUEADO: precisa do caminho do jogador |
-| G3 | P2 | Arquibancada piscando no título | só no **modo 60 fps**: a plateia (passe 10) troca de quadro de animação a cada quadro (animação contada em quadros, dobrada pelo modo 60); a 30 fps não ocorre. `tests/regression/title60.json` | não é erro do renderer; ajuste específico do modo 60 (60MODE-ANIM) |
+| G3 | P1 | Arquibancada piscando no título | só no **modo 60 fps**: a plateia (passe 10) troca de quadro de animação a cada quadro (animação contada em quadros, dobrada pelo modo 60); a 30 fps não ocorre. `tests/regression/title60.json` | não é erro do renderer; ajuste específico do modo 60 (60MODE-ANIM) |
 | DYNRES | P2 | O jogo desenha a cena a 80% no mundo aberto (1536x864 em alvo 1920x1080) | F9 em `build/logs/sword-20261018-145705.log` | comportamento do jogo; paliativo: render 1440p |
-| PERF60 | P2 | 60 fps não ficam lisos | `performance-baseline.md` | a medir a 1440p |
+| PERF60 | P1 | Mundo aberto abaixo de 60 fps no modo 60 (1440p) | interiores 60 (baseline DoD); mundo aberto ~33 fps em `805c64e`, ~47 fps com as mudanças não commitadas do ciclo 3 (`reports/cycles/003.md`) | gargalo atual: CPU das threads do jogo; próximo passo: perfil por amostragem (`LARECOMP_SAMPLE`) |
 | STAB | P2 | Sessões longas e salvar/carregar sem teste formal | — | NÃO TESTADO |
 | FPS120 | P3 | 120 fps | — | depois de 60 estáveis |
 

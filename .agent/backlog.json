@@ -157,7 +157,7 @@
    "title": "60 FPS estáveis a 1440p (média >= 59, mediana/P95 <= 16,7 ms, P99 <= 20 ms)",
    "repro": "supervisor.py baseline --profiles 1440p60",
    "regression": "benchmarks na test-matrix",
-   "status": "open",
+   "status": "partial",
    "attempts": 1,
    "max_attempts": 6,
    "stalls": 0,
@@ -171,6 +171,9 @@
      "evidence": "A/Bs a partir de 05:30 contaminados: aa_quality.py da sessao letsgo abre jogos Let's Go durante as rodadas (recheck 06:33: contaminated=true, 31-34 fps x 41,7 na baseline limpa)",
      "note": "refazer quando a maquina estiver livre; o harness agora detecta e marca rodadas contaminadas"
     }
+   ],
+   "notes": [
+    "20/10 08:15 (ciclo 3, não commitado): cópias de buffer inline + readbacks adiados levaram o mundo aberto de ~33 para ~47 fps; espera da GPU 545 -> 5 ms/2 s; render thread ~40% ocupada; gargalo = CPU das threads do jogo. Próximo: sampler LARECOMP_SAMPLE (runtime/sampler.c)."
    ]
   },
   {
@@ -373,7 +376,10 @@
    "stalls": 0,
    "title": "Modo 60 fps: animacoes contadas em quadros andam no dobro (plateia do titulo pisca: G3). Achar e passo-a-passo pela metade no modo 60",
    "repro": "tests/regression/title60.json (alternancia 0,226)",
-   "regression": "title60 G3-no-alternation"
+   "regression": "title60 G3-no-alternation",
+   "notes": [
+    "20/10: o usuário ainda vê a plateia piscando a 60 fps e quer correção (animação a 30 Hz no modo 60)."
+   ]
   },
   {
    "id": "LEAK",

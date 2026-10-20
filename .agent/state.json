@@ -1,13 +1,13 @@
 {
- "cycle": 15,
+ "cycle": 16,
  "reference_commit": "805c64e",
- "active_item": null,
- "updated": "2026-10-20T07:05:03",
- "phase": "Ciclos de correção (ciclo 2 concluído); baseline DoD 3x3 em andamento",
+ "active_item": "PERF60",
+ "updated": "2026-10-20T08:20:00",
+ "phase": "Ciclo 3 interrompido pelo usuário (precisou do PC); código do ciclo NÃO commitado",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
- "last_hypothesis": "perf: Postwick limitado pela CPU (a separar com perfil por thread)",
- "next_action": "analisar a baseline DoD (reports/baseline/*.md); PERF60 com perfil real; G3 (título); difftest com memória; SYNC-HAZARD do present",
- "last_item": "STAB",
- "last_result": "open",
- "last_evidence": "loop automatico (quadrado) descartado pelo usuario; 19 min rodados sem erro antes de parar (reports/runs/stab_postwick/20261020-064236-stab60-1-1)"
+ "last_hypothesis": "mundo aberto limitado pela CPU das threads do jogo (16/17/18 em cadeia); render thread ~40% ocupada, sem esperas da GPU",
+ "next_action": "ver .agent/last-cycle.md 'Como continuar': regressões + checagem visual e commit; sampler (LARECOMP_SAMPLE=1450:1650) no openworld; G3 a 30 Hz no modo 60",
+ "last_item": "PERF60",
+ "last_result": "partial",
+ "last_evidence": "openworld 1440p60 ~33 -> ~47 fps (reports/runs/openworld/20261020-075946-ow-rb7-1); [rtprof] em reports/runs/openworld/20261020-080518-ow-rtprof-1"
 }
