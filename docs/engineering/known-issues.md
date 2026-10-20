@@ -9,7 +9,9 @@ O estado vivo fica em `.agent/backlog.json` (`python tools/agent/supervisor.py s
 | G1 | P1 | Manchas brancas ao entrar andando no quarto | `docs/DIAGNOSTICO-SWSH.md`; `tests/scenarios/room_enter.json` não reproduz (nem com barrier desligado nem no modo antigo de pular draws) | BLOQUEADO: precisa do caminho do jogador |
 | G3 | P1 | Arquibancada piscando no título | só no **modo 60 fps**: a plateia (passe 10) troca de quadro de animação a cada quadro (animação contada em quadros, dobrada pelo modo 60); a 30 fps não ocorre. `tests/regression/title60.json` | não é erro do renderer; ajuste específico do modo 60 (60MODE-ANIM) |
 | DYNRES | P2 | O jogo desenha a cena a 80% no mundo aberto (1536x864 em alvo 1920x1080) | F9 em `build/logs/sword-20261018-145705.log` | comportamento do jogo; paliativo: render 1440p |
-| PERF60 | P1 | 60 fps a 1440p: P95 / P99 ainda acima da meta | interiores 60; mundo aberto parado ~33 -> 60 fps (`2016be2`, `8a642f1`; `reports/cycles/003.md`); P95 18,9 ms, P99 20,2 ms | falta medir em movimento; render thread ~90% ocupada |
+| PERF60 | P1 | 60 fps a 1440p: P95 / P99 ainda acima da meta | interiores 60; mundo aberto parado ~33 -> 60 fps (`2016be2`, `8a642f1`; `reports/cycles/003.md`); P95 18,9 ms, P99 20,2 ms | render thread corrigida no ciclo 4 (`reports/cycles/004.md`): sem limite, panorâmica 76,5 -> 97,5 fps; resta P95 / P99 |
+| TESTCLOCK | P3 | A luma do quarto nos testes varia com a hora real apesar de LARECOMP_FIXED_TIME (123,0 / 125,4 / 122,7) | `reports/cycles/004.md` | a investigar; os limites das regressões passam |
+| HEAPIMPORT | P3 | Hitch de ~250 ms na primeira importação do heap do guest (3,2 GB) para memória global | `reports/cycles/004.md` | fazer no carregamento |
 | STAB | P2 | Sessões longas e salvar/carregar sem teste formal | — | NÃO TESTADO |
 | FPS120 | P3 | 120 fps | — | depois de 60 estáveis |
 
