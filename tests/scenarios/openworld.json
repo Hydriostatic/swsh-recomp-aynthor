@@ -1,0 +1,13 @@
+{
+ "description": "Open world, from the player's save of 20/10 07:30 (standing still). A wild Pokemon walks into the player and starts a battle after ~45 s (frame ~1100 in 30 fps frames, earlier in game time at 60): measured before it",
+ "save": "build/scenario-saves/openworld",
+ "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8",
+ "exit_at": 1060,
+ "measure": [
+  700,
+  1030
+ ],
+ "shots": [
+  1030
+ ]
+}
