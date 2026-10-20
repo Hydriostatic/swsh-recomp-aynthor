@@ -481,6 +481,8 @@ static void upload_texture(NvnTexture *t, TexBackend *b) {
     prof_tex_checks++;
     if (t->flags & 0x10) b->dynamic = true;
     if (full_hash_budget_frame != frame) { full_hash_budget_frame = frame; full_hash_budget = 4 << 20; }
+    extern void readback_sync_range(uint64_t a, uint64_t n);
+    readback_sync_range(t->addr, total);  // (a texture -> buffer readback still landing there: exec.c)
     const uint8_t *mem = (const uint8_t *)(uintptr_t)t->addr;
     static int always_full = -1;
     if (always_full < 0) always_full = getenv("LARECOMP_TEX_FULLHASH") ? 1 : 0;

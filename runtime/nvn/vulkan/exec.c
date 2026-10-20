@@ -21,6 +21,7 @@
 static uint64_t g_draws_total;  // (never reset: LARECOMP_COUNTER_LOG)
 static void watch_tex(NvnTexture *t, const char *what, const NvnTexture *from);  // (LARECOMP_WATCH_TEX, below)
 static uint64_t stat_draws, stat_skipped, stat_passes, stat_dispatches, stat_wait_ns, stat_flushes, stat_feedback_copies;
+static uint64_t stat_copy_flushed, stat_copy_inline;  // CopyBufferToBuffer: with a GPU flush first / without
 static uint64_t stat_nvn_barriers, stat_barrier_bits[0x200];  // nvnCommandBufferBarrier: applied (nonzero), and per bit value
 static uint64_t stat_holds, stat_hold_ns, stat_hold_max_ns, stat_hold_claims, stat_hold_timeouts;  // (wait_built)
 static uint64_t stat_alpha_func[16];  // draws by NVN alpha test function (ColorState byte 2; 8 = ALWAYS, the default)
@@ -80,6 +81,60 @@ uint64_t vk_completed_seq(void) {
     return v;
 }
 
+// ---- deferred texture -> buffer readbacks
+// nvnCommandBufferCopyTextureToBuffer writes guest memory from the GPU. It waited for the GPU to go idle so the result
+// could be copied right away: ~3 times a frame in the overworld, 0.6 s of every 2 s spent waiting. As on the console,
+// the result now lands when the GPU has run it: each readback has its own host buffer and the submission number it was
+// recorded in, and is copied into guest memory once that submission is done - when anyone waits for it (vk_wait_seq:
+// the game's nvnSyncWait, flushes), at the start of each submitted list, or before this thread reads or writes guest
+// memory it overlaps (readback_sync_range). LARECOMP_READBACK_SYNC=1: wait at the copy, as before.
+typedef struct { uint64_t seq, dst, size; VkBuffer buf; VmaAllocation mem; void *ptr; VkImage img; VmaAllocation img_mem; bool superseded; } Readback;
+#define RB_MAX 64
+static Readback g_rb[RB_MAX];
+static int g_nrb;
+static pthread_mutex_t g_rb_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t stat_rb_deferred, stat_rb_sync, stat_rb_gmem_waits, stat_rb_superseded;
+static void readbacks_done(uint64_t done) {
+    if (!g_nrb) return;  // (a racy peek: the lock below decides)
+    pthread_mutex_lock(&g_rb_lock);
+    for (int i = 0; i < g_nrb;) {
+        Readback *r = &g_rb[i];
+        if (r->seq > done) { i++; continue; }
+        if (!r->superseded) memcpy((void *)(uintptr_t)r->dst, r->ptr, r->size);
+        vmaDestroyBuffer(g_vk.vma, r->buf, r->mem);
+        if (r->img) vmaDestroyImage(g_vk.vma, r->img, r->img_mem);
+        g_rb[i] = g_rb[--g_nrb];
+    }
+    pthread_mutex_unlock(&g_rb_lock);
+}
+void vk_wait_seq(uint64_t seq);
+// A draw / dispatch whose shaders read guest memory in place (global memory) may read a readback's destination: the
+// pending readbacks land first (they are all submitted; this only waits).
+static void readbacks_before_gmem(void) {
+    if (!g_nrb) return;
+    uint64_t need = 0;
+    pthread_mutex_lock(&g_rb_lock);
+    for (int i = 0; i < g_nrb; i++) if (g_rb[i].seq > need) need = g_rb[i].seq;
+    pthread_mutex_unlock(&g_rb_lock);
+    if (need) vk_wait_seq(need > submit_seq ? submit_seq : need);
+    stat_rb_gmem_waits++;
+}
+// Before reading or writing [a, a + n) of guest memory on the CPU: the readbacks that land there are finished first.
+void readback_sync_range(uint64_t a, uint64_t n) {
+    if (!g_nrb) return;
+    uint64_t need = 0;
+    pthread_mutex_lock(&g_rb_lock);
+    for (int i = 0; i < g_nrb; i++)
+        if (!g_rb[i].superseded && g_rb[i].dst < a + n && a < g_rb[i].dst + g_rb[i].size && g_rb[i].seq > need) need = g_rb[i].seq;
+    pthread_mutex_unlock(&g_rb_lock);
+    if (!need) return;
+    vk_wait_seq(need > submit_seq ? submit_seq : need);  // (each deferred readback is submitted right after it is recorded)
+}
+
+// LARECOMP_VK_WAITPROF=1: wait time by caller (return address), the top ones logged with the stats line
+#define WAITPROF_N 32
+static struct { void *ra; uint64_t ns, n; } g_waitprof[WAITPROF_N];
+static pthread_mutex_t g_waitprof_lock = PTHREAD_MUTEX_INITIALIZER;
 void vk_wait_seq(uint64_t seq) {
     if (!seq) return;
     VkSemaphoreWaitInfo wi = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, .semaphoreCount = 1, .pSemaphores = &g_vk.timeline,
@@ -87,7 +142,19 @@ void vk_wait_seq(uint64_t seq) {
     uint64_t t0 = SDL_GetTicksNS();
     VkResult r = vkWaitSemaphores(g_vk.dev, &wi, 10ull * 1000000000ull);
     stat_wait_ns += SDL_GetTicksNS() - t0;
+    static int wp = -1;
+    if (wp < 0) wp = getenv("LARECOMP_VK_WAITPROF") != NULL;
+    if (wp) {
+        void *ra = __builtin_return_address(0);
+        uint64_t dt = SDL_GetTicksNS() - t0;
+        pthread_mutex_lock(&g_waitprof_lock);
+        int i = 0;
+        while (i < WAITPROF_N && g_waitprof[i].ra && g_waitprof[i].ra != ra) i++;
+        if (i < WAITPROF_N) { g_waitprof[i].ra = ra; g_waitprof[i].ns += dt; g_waitprof[i].n++; }
+        pthread_mutex_unlock(&g_waitprof_lock);
+    }
     cum_wait += SDL_GetTicksNS() - t0;
+    if (r == VK_SUCCESS) readbacks_done(seq);
     if (r == VK_TIMEOUT) LOG("[vk] GPU did not finish submission %llu within 10 s (device lost?)\n", (unsigned long long)seq);
     else if (r != VK_SUCCESS) {
         extern void vk_devlost_dump(void);
@@ -560,7 +627,9 @@ static VkSpan transient_gpu_copy(const void *data, uint64_t size, uint64_t align
     if (size) memcpy(s.ptr, data, size);
     return s;
 }
+void readback_sync_range(uint64_t a, uint64_t n);
 static VkSpan guest_copy_pool(uint64_t addr, uint64_t size, bool gpu) {  // (gpu: vertex / index data, in VRAM when that ring is on)
+    readback_sync_range(addr, size);
     uint64_t seq = vk_pending_seq() + (gcopy_gen << 40), h = (addr * 0x9E3779B97F4A7C15ull) ^ (size * 0xC2B2AE3D27D4EB4Full);
     uint32_t slot = (uint32_t)(h ^ (h >> 32)) & (GCOPY_TAB - 1);
     if (gcopy[slot].seq == seq && gcopy[slot].addr == addr && gcopy[slot].size == size && gcopy[slot].gpu == gpu) return gcopy[slot].span;
@@ -576,6 +645,7 @@ static VkSpan guest_copy(uint64_t addr, uint64_t size) { return guest_copy_pool(
 #define VCOPY_TAB 1024
 static struct { uint64_t addr, len, seq; VkSpan span; } vcopy[VCOPY_TAB];
 static VkSpan vertex_copy(uint64_t addr, uint64_t need, uint64_t bound, bool per_vertex) {
+    readback_sync_range(addr, bound > need ? bound : need);
     uint64_t seq = vk_pending_seq() + (gcopy_gen << 40);
     uint32_t h = (uint32_t)((addr >> 4) * 0x9E3779B1u) & (VCOPY_TAB - 1), at = h;
     for (int i = 0; i < 4; i++) {
@@ -828,6 +898,18 @@ const char *renderer_stats(void) {
         size_t n = strlen(stats_text);
         recipes_stats(stats_text + n, sizeof stats_text - n);
     }
+    if (stat_rb_deferred || stat_rb_sync) {
+        size_t n = strlen(stats_text);
+        snprintf(stats_text + n, sizeof stats_text - n, " | readbacks %llu deferred, %llu waited, %llu gmem waits, %llu superseded", (unsigned long long)stat_rb_deferred,
+                 (unsigned long long)stat_rb_sync, (unsigned long long)stat_rb_gmem_waits, (unsigned long long)stat_rb_superseded);
+        stat_rb_deferred = stat_rb_sync = stat_rb_gmem_waits = stat_rb_superseded = 0;
+    }
+    if (stat_copy_flushed || stat_copy_inline) {
+        size_t n = strlen(stats_text);
+        snprintf(stats_text + n, sizeof stats_text - n, " | buffer copies %llu flushed, %llu inline", (unsigned long long)stat_copy_flushed,
+                 (unsigned long long)stat_copy_inline);
+        stat_copy_flushed = stat_copy_inline = 0;
+    }
     if (stat_holds) {  // draws that waited for their program / pipeline (wait_built)
         size_t n = strlen(stats_text);
         snprintf(stats_text + n, sizeof stats_text - n, " | holds %llu (%.0fms, max %.1fms, claimed %llu, timeouts %llu)",
@@ -846,6 +928,23 @@ const char *renderer_stats(void) {
             snprintf(stats_text + n, sizeof stats_text - n, " ]");
         }
         memset(stat_alpha_func, 0, sizeof stat_alpha_func);
+    }
+    if (getenv("LARECOMP_VK_WAITPROF")) {  // waits for the GPU by caller since the last line (ra: lasrecomp+offset)
+        size_t n = strlen(stats_text);
+        n += snprintf(stats_text + n, sizeof stats_text - n, " | waits by caller:");
+        pthread_mutex_lock(&g_waitprof_lock);
+        extern const char *plat_symbol(uint64_t pc, uint64_t *offset);
+        for (int i = 0; i < WAITPROF_N && g_waitprof[i].ra && n < sizeof stats_text - 64; i++) {
+            if (!g_waitprof[i].n) continue;
+            uint64_t off = 0;
+            const char *mod = plat_symbol((uint64_t)(uintptr_t)g_waitprof[i].ra, &off);
+            extern char __ImageBase;  // (the exe: an offset from its base, for addr2line -e lasrecomp.exe 0x140000000+off)
+            if (!mod) mod = "exe", off = (uint64_t)((char *)g_waitprof[i].ra - &__ImageBase);
+            n += snprintf(stats_text + n, sizeof stats_text - n, " %s+%llx %.0fms/%llu", mod, (unsigned long long)off,
+                          g_waitprof[i].ns / 1e6, (unsigned long long)g_waitprof[i].n);
+            g_waitprof[i].ns = g_waitprof[i].n = 0;
+        }
+        pthread_mutex_unlock(&g_waitprof_lock);
     }
     {   // validation layer messages so far (LARECOMP_VK_VALIDATION=1, device.c)
         extern atomic_uint g_vkval_errors, g_vkval_warnings;
@@ -2269,6 +2368,22 @@ static void gpuw_stores(const ShaderInfo *si, const Range *sbufs, int n, const c
         LOG("[vk] %s %llx stores to global memory without a storage buffer: vertex and index data is read in place from now on\n", what, (unsigned long long)code);
     }
 }
+// The pending submission of the last draw / dispatch whose shaders read or write guest memory in place (global memory):
+// until the GPU has run it, any guest range may be in use by the GPU.
+static uint64_t g_gmem_seq;
+static bool gpuw_overlaps(uint64_t a, uint64_t n);
+// The GPU may still read or write [a, a + n) of guest memory in place: a compute / shader store range (gpuw), or work
+// with global memory access not finished yet. Everything else the GPU uses was copied when its command was recorded
+// (constant buffers, vertex / index data outside gpuw ranges, texture uploads), in command order on this thread.
+static bool gpu_may_touch(uint64_t a, uint64_t n) {
+    if (gpuw_overlaps(a, n)) return true;
+    if (g_gmem_seq) {
+        uint64_t done = 0;
+        vkGetSemaphoreCounterValue(g_vk.dev, g_vk.timeline, &done);
+        if (g_gmem_seq > done) return true;
+    }
+    return false;
+}
 static bool gpuw_overlaps(uint64_t a, uint64_t n) {
     uint64_t e = a + n;
     if (gpuw_unknown) return true;
@@ -2509,6 +2624,7 @@ static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
     gp_mark(cb, "dispatch %ux%ux%u (local %ux%ux%u)", gx, gy, gz, cp->local[0], cp->local[1], cp->local[2]);
     dl_note("dispatch %ux%ux%u cs %llx gmem %d", gx, gy, gz, (unsigned long long)st.program->stages[5].code_addr, cp->si->uses_gmem);
     gpuw_stores(cp->si, st.sbuf[5], 16, "compute shader", st.program->stages[5].code_addr);
+    if (cp->si->uses_gmem) { readbacks_before_gmem(); g_gmem_seq = vk_pending_seq(); }
     for (int i = 0; i < 16; i++) if (st.sbuf[5][i].addr) gpuw_note(st.sbuf[5][i].addr, st.sbuf[5][i].size);  // (any storage buffer it has bound)
     nfeedback = 0;
     VkDescriptorSet ds = stage_set(&cp->p, cp->p.set_layout[0], 0, 5, cp->si, NULL, NULL, gx, gy, gz, NULL);
@@ -3216,6 +3332,7 @@ static void draw_(CmdRec *r, bool indexed) {
     uint64_t prof_t1_ = prof ? SDL_GetTicksNS() : 0;
     gpuw_stores(pr->vi, st.sbuf[0], 16, "vertex shader", st.program->stages[0].code_addr);
     gpuw_stores(pr->fi, st.sbuf[1], 16, "fragment shader", st.program->stages[1].code_addr);
+    if (pr->vi->uses_gmem || pr->fi->uses_gmem) { readbacks_before_gmem(); g_gmem_seq = vk_pending_seq(); }
     VkDescriptorSet fset = stage_set(pr, pr->set_layout[1], 1, 1, pr->fi, rs0, tint, 0, 0, 0, fii);
     if (prof) prof_sets += SDL_GetTicksNS() - prof_t1_;
     VkDescriptorSet sets[2] = {vset, fset};
@@ -3586,6 +3703,53 @@ static void copy_texture_to_buffer(const TexRefRec *src, uint64_t dst) {
     bool array = b->layers > 1 && b->depth == 1;
     uint32_t nz = (uint32_t)rg[5];
     uint64_t total = img * nz;
+    static int sync_rb = -1;
+    if (sync_rb < 0) sync_rb = getenv("LARECOMP_READBACK_SYNC") ? atoi(getenv("LARECOMP_READBACK_SYNC")) : 0;
+    {   // an older readback still pending for exactly this range: the game never waited for it (its wait would have
+        // landed it before this list ran), so nobody reads it - it is superseded (its buffer freed once the GPU is done)
+        pthread_mutex_lock(&g_rb_lock);
+        for (int i = 0; i < g_nrb; i++)
+            if (g_rb[i].dst == dst && g_rb[i].size == total) { g_rb[i].superseded = true; stat_rb_superseded++; }
+        pthread_mutex_unlock(&g_rb_lock);
+    }
+    readback_sync_range(dst, total);  // (a partly overlapping one lands first)
+    // deferred unless a compute store range covers dst (in-place reads there); work recorded before this copy finishes
+    // before it anyway (submissions run in order), and a later shader reading guest memory in place waits for the
+    // pending readbacks when it is recorded (readbacks_before_gmem)
+    if (!sync_rb && !gpuw_overlaps(dst, total)) {
+        pthread_mutex_lock(&g_rb_lock);
+        bool room = g_nrb < RB_MAX;
+        pthread_mutex_unlock(&g_rb_lock);
+        if (room) {
+            Readback rb = {.seq = vk_pending_seq(), .dst = dst, .size = total};
+            VkBufferCreateInfo bi = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = total, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+            VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+                                          .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT};
+            VmaAllocationInfo info;
+            if (vmaCreateBuffer(g_vk.vma, &bi, &ai, &rb.buf, &rb.mem, &info) == VK_SUCCESS) {
+                rb.ptr = info.pMappedData;
+                VkBufferImageCopy c = {.bufferOffset = 0, .bufferRowLength = (uint32_t)(row / fi->bpb) * fi->bw,
+                                       .bufferImageHeight = (uint32_t)(img / row) * fi->bh,
+                                       .imageSubresource = {b->aspect & VK_IMAGE_ASPECT_DEPTH_BIT ? VK_IMAGE_ASPECT_DEPTH_BIT : b->aspect,
+                                                            (uint32_t)level, array ? (uint32_t)rg[2] : 0, array ? nz : 1},
+                                       .imageOffset = {rg[0], rg[1], array ? 0 : rg[2]},
+                                       .imageExtent = {(uint32_t)rg[3], (uint32_t)rg[4], array ? 1 : nz}};
+                vkCmdCopyImageToBuffer(cb, srcimg, VK_IMAGE_LAYOUT_GENERAL, rb.buf, 1, &c);
+                vk_full_barrier(cb);
+                if (small_mem) rb.img = srcimg, rb.img_mem = small_mem;
+                pthread_mutex_lock(&g_rb_lock);
+                g_rb[g_nrb++] = rb;
+                pthread_mutex_unlock(&g_rb_lock);
+                stat_rb_deferred++;
+                // submitted now (not waited): whoever needs the result later only waits for a submission already sent,
+                // never has to send the one being built (a flush in the middle of a draw would leave its command buffer)
+                extern void renderer_submit(void);
+                renderer_submit();
+                return;
+            }
+        }
+    }
+    stat_rb_sync++;
     VkSpan out = vk_readback(total);
     VkBufferImageCopy c = {.bufferOffset = out.off, .bufferRowLength = (uint32_t)(row / fi->bpb) * fi->bw,
                            .bufferImageHeight = (uint32_t)(img / row) * fi->bh,
@@ -4020,7 +4184,15 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
 static void exec_list(uint64_t handle, int depth) {
     uint64_t p = handle;
     if (depth == 0) st.obj = 0, st.obj_draw = 0;  // (a submitted list starts with no object; its called lists inherit)
-    if (depth == 0) { sh_pump(); recipes_pump(); }  // (pipeline recipes: prewarm what the programs handed over complete)
+    if (depth == 0) {
+        sh_pump();
+        recipes_pump();
+        if (g_nrb) {  // (deferred readbacks the GPU has finished)
+            uint64_t done = 0;
+            vkGetSemaphoreCounterValue(g_vk.dev, g_vk.timeline, &done);
+            readbacks_done(done);
+        }
+    }  // (pipeline recipes: prewarm what the programs handed over complete)
     for (int guard = 0; guard < 10000000; guard++) {
         CmdRec *r = cmd_rec_at(p);  // (p is a guest address; the record is in the shadow, nvn.h)
         void *x = r->extra;
@@ -4201,6 +4373,7 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_DRAW_ARRAYS: draw(r, false); break;
         case CMD_DRAW_ELEMENTS: draw(r, true); break;
         case CMD_UPDATE_UNIFORM_BUFFER:
+            readback_sync_range(r->x[0] + r->x[2], r->x[3]);
             memcpy((void *)(uintptr_t)(r->x[0] + r->x[2]), x, r->x[3]);
             guest_copy_flush();  // (cbuf copies shared within the submission are stale now)
             break;
@@ -4240,11 +4413,32 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_DOWNSAMPLE: { const TexRefRec *t = x; copy_texture(&t[0], &t[1], 1); break; }
         case CMD_COPY_BUFFER_TO_TEXTURE: copy_buffer_to_texture(r->x[0], x); break;
         case CMD_COPY_TEXTURE_TO_BUFFER: copy_texture_to_buffer(x, r->x[3]); break;
-        case CMD_COPY_BUFFER_TO_BUFFER:
-            renderer_flush();
+        case CMD_COPY_BUFFER_TO_BUFFER: {
+            // A buffer copy is done by this thread, in command order. It used to wait for the GPU to go idle first
+            // (submit + wait), ~230 times a frame in the overworld: 0.8 s of every 2 s spent waiting, the GPU idle 85%.
+            // Only a range the GPU may touch in place needs that (gpu_may_touch); the rest is already ordered.
+            // LARECOMP_COPY_FLUSH=1: always flush (the old behaviour, A/B).
+            static int always = -1;
+            if (always < 0) always = getenv("LARECOMP_COPY_FLUSH") ? atoi(getenv("LARECOMP_COPY_FLUSH")) : 0;
+            readback_sync_range(r->x[0], r->x[2]);
+            readback_sync_range(r->x[1], r->x[2]);
+            if (always || gpu_may_touch(r->x[0], r->x[2]) || gpu_may_touch(r->x[1], r->x[2])) {
+                static int nlog;
+                if (getenv("LARECOMP_COPY_LOG") && nlog < 40) {
+                    nlog++;
+                    LOG("[copy] flush %llx -> %llx (%llu bytes): gpuw src %d dst %d, gmem pending %d\n", (unsigned long long)r->x[0],
+                        (unsigned long long)r->x[1], (unsigned long long)r->x[2], gpuw_overlaps(r->x[0], r->x[2]),
+                        gpuw_overlaps(r->x[1], r->x[2]), g_gmem_seq != 0);
+                }
+                renderer_flush();
+                stat_copy_flushed++;
+            }
+            else stat_copy_inline++;
             memmove((void *)(uintptr_t)r->x[1], (void *)(uintptr_t)r->x[0], r->x[2]);
+            guest_copy_flush();           // (copies of guest memory shared within the submission are stale now)
             sh_written(r->x[1], r->x[2]);  // (shader code copied in: its cached hash is stale)
             break;
+        }
         default: break;
         }
         p += CMD_GSIZE(r->size);
