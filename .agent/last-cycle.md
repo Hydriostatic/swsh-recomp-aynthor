@@ -2,29 +2,20 @@
 
 Relatório completo: `reports/cycles/003.md`. Parado em 20/10/2026 ~08:15 porque o usuário precisou usar o PC.
 
-## Estado do código (IMPORTANTE)
-Último commit: `805c64e`. **Não commitado** (no working tree, compila; o build em `build/v132` já contém tudo):
-- `runtime/nvn/vulkan/exec.c`: cópias de buffer inline (`gpu_may_touch`), readbacks adiados (`g_rb`,
-  `readback_sync_range`, `readbacks_done`, superseded), estatísticas novas.
-- `runtime/nvn/vulkan/textures.c`: `readback_sync_range` no `upload_texture`.
-- `runtime/nvn/vulkan/renderthread.c`: `LARECOMP_RT_PROF`.
-- `runtime/sampler.c` (novo, não rastreado) + `runtime/kernel.c`: `LARECOMP_SAMPLE`.
-- `tests/scenarios/openworld.json` e `stairs_rug.json` (não rastreados), `.agent/test-matrix.json`.
-- `reports/baseline-dod-run.txt`, `reports/stab60-1.txt` (não rastreados, saídas de rodadas).
+## Estado do código
+Tudo commitado: `2016be2` (FP via MXCSR), `8a642f1` (cópias inline + readbacks adiados), `e2ef82f` (RT_PROF + sampler),
+`434d823` (cenários). Não rastreados e sem importância: `reports/baseline-dod-run.txt`, `reports/stab60-1.txt`.
 
-Antes de commitar: rodar as regressões e a checagem visual abaixo (passos 1-2).
-
-## Números atuais (1440p60, mundo aberto, antes da batalha)
+## Números atuais (1440p60, mundo aberto parado, antes da batalha)
 | versão | fps |
 |---|---|
-| 805c64e (flush em toda CopyBufferToBuffer) | ~33 |
-| + cópias inline | ~46-47 |
-| + readbacks adiados / superseded | ~46-49 (espera da GPU 545 -> 5 ms a cada 2 s) |
-
-Render thread ocupada ~40%; o jogo quase não espera por ela (`[rtprof]`). O gargalo agora é a CPU das threads do
-jogo (16/17/18 trabalham em cadeia, pelo `LARECOMP_PROF_SVC`).
+| 805c64e | ~33 |
+| + cópias inline / readbacks adiados (8a642f1) | ~47 |
+| + modo de arredondamento via MXCSR (2016be2) | **60** (3 rodadas: 60,00 / 59,99 / 59,82; P95 18,9 ms, P99 20,2 ms) |
 
 ## Como continuar
+0. (FEITO 12:20-13:05: passos 1 e 2 abaixo; ver reports/cycles/003.md "Retomada".) Próximo de verdade: medir o
+   mundo aberto em movimento (bicicleta / andando) e o P95; render thread ~90% ocupada agora.
 1. **Correção das mudanças:** `python tools/agent/supervisor.py regress` e comparar o quadro do openworld (shot 1030)
    com `--env LARECOMP_COPY_FLUSH=1 --env LARECOMP_READBACK_SYNC=1` (imgcheck / SSIM, relógio fixo). Se ok, commitar
    em partes: `perf(vulkan): ...copies inline`, `perf(vulkan): deferred readbacks`, `feat(tools): rt prof + sampler`.

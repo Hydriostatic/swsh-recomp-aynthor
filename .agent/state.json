@@ -1,13 +1,13 @@
 {
- "cycle": 16,
- "reference_commit": "805c64e",
+ "cycle": 17,
+ "reference_commit": "434d823",
  "active_item": "PERF60",
- "updated": "2026-10-20T08:20:00",
- "phase": "Ciclo 3 interrompido pelo usuário (precisou do PC); código do ciclo NÃO commitado",
+ "updated": "2026-10-20T13:10:00",
+ "phase": "Ciclo 3 concluído: mundo aberto parado a 60 fps",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
- "last_hypothesis": "mundo aberto limitado pela CPU das threads do jogo (16/17/18 em cadeia); render thread ~40% ocupada, sem esperas da GPU",
- "next_action": "ver .agent/last-cycle.md 'Como continuar': regressões + checagem visual e commit; sampler (LARECOMP_SAMPLE=1450:1650) no openworld; G3 a 30 Hz no modo 60",
+ "last_hypothesis": "próximo limite: render thread ~90% ocupada (exec ~1,78 s / 2 s) e uma espera da GPU por quadro (cópia com gmem pendente)",
+ "next_action": "medir mundo aberto em movimento; P95/P99 (18,9 / 20,2 ms); G3 a 60 fps; LEAK",
  "last_item": "PERF60",
- "last_result": "partial",
- "last_evidence": "openworld 1440p60 ~33 -> ~47 fps (reports/runs/openworld/20261020-075946-ow-rb7-1); [rtprof] em reports/runs/openworld/20261020-080518-ow-rtprof-1"
+ "last_result": "fixed (cenário parado)",
+ "last_evidence": "reports/runs/openworld/20261020-125316-ow-final-1 e seguintes: 60,00/59,99/59,82 fps"
 }

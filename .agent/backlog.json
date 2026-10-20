@@ -173,7 +173,8 @@
     }
    ],
    "notes": [
-    "20/10 08:15 (ciclo 3, não commitado): cópias de buffer inline + readbacks adiados levaram o mundo aberto de ~33 para ~47 fps; espera da GPU 545 -> 5 ms/2 s; render thread ~40% ocupada; gargalo = CPU das threads do jogo. Próximo: sampler LARECOMP_SAMPLE (runtime/sampler.c)."
+    "20/10 08:15 (ciclo 3, não commitado): cópias de buffer inline + readbacks adiados levaram o mundo aberto de ~33 para ~47 fps; espera da GPU 545 -> 5 ms/2 s; render thread ~40% ocupada; gargalo = CPU das threads do jogo. Próximo: sampler LARECOMP_SAMPLE (runtime/sampler.c).",
+    "20/10 13:05: causa principal da CPU do jogo achada pelo sampler: fegetround/fesetround da MinGW a cada op de FP (FPCR.FZ ligado). Corrigido em 2016be2: mundo aberto parado 60 fps (3 rodadas). Falta: em movimento, P95 18,9 / P99 20,2 ms."
    ]
   },
   {

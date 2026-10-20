@@ -38,7 +38,7 @@ Status de cada critério: **PASSOU**, **FALHOU**, **NÃO TESTADO** ou **BLOQUEAD
 ## Desempenho, 1440p / RTX 3080 / i5-14600KF (meta: 60 fps)
 | Critério | Status | Evidência |
 |---|---|---|
-| FPS médio ≥ 59 | PASSOU (interiores) / FALHOU (Postwick, mundo aberto) | interiores 60,0; Postwick 41,7 (quente) e 19,8 (fria); mundo aberto ~33 em `805c64e`, ~47 com o ciclo 3 não commitado (`reports/cycles/003.md`) |
+| FPS médio ≥ 59 | PASSOU (interiores) / FALHOU (Postwick, mundo aberto) | interiores 60,0; Postwick 41,7 (quente) e 19,8 (fria); mundo aberto parado: ~33 em `805c64e` -> 60,0 / 60,0 / 59,8 em `2016be2` (`reports/cycles/003.md`); em movimento NÃO TESTADO |
 | Mediana do frametime ≤ 16,7 ms | PASSOU (interiores) / FALHOU (Postwick) | 16,65 ms; Postwick 26,1 |
 | P95 ≤ 16,7 ms | FALHOU | interiores 17,1-18,4 ms; Postwick 27,5 |
 | P99 ≤ 20 ms | PASSOU (interiores) / FALHOU (Postwick) | interiores 17,9-19,5 ms; Postwick 28,6 |
