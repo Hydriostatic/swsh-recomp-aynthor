@@ -1,0 +1,14 @@
+{
+ "description": "openworld2: open the menu (X), close it (B), open the map / town map? (menu item) - looking for the game-side ~160 ms hitch with ~6 draws",
+ "save": "build/scenario-saves/openworld2",
+ "input": "600:A:8,800:A:8,900:X:4,1000:B:4,1100:X:4,1200:B:4",
+ "exit_at": 1300,
+ "measure": [
+  850,
+  1290
+ ],
+ "shots": [
+  950,
+  1150
+ ]
+}

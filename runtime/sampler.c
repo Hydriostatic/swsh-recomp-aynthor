@@ -1,5 +1,5 @@
 // LARECOMP_SAMPLE=<from frame>:<to frame> (Windows): a sampling profile of the game threads between those game frames
-// (renderer_game_frame: presents the game has made). About 1,000 times a second each guest thread is suspended, its host
+// (presents shown, as the [vk] lines and the harness count them). About 1,000 times a second each guest thread is suspended, its host
 // stack unwound (the recompiled functions have unwind data like any other), and resumed; per thread, the functions on
 // top (self) and anywhere on the stack (inclusive) are counted. Written to build/sample.txt (LARECOMP_SAMPLE_OUT) when
 // the window ends: game functions as f_<guest addr>, the runtime's as lasrecomp+<offset> (tools/addr2sym.py / nm).
@@ -15,7 +15,8 @@
 #include "kernel.h"
 #include "rt.h"
 
-uint64_t renderer_game_frame(void);
+uint64_t renderer_present_count(void);  // device.c: presents shown (the frame numbers of the [vk] lines and the test harness)
+#define renderer_game_frame renderer_present_count
 const char *rt_host_fn_name(uint64_t pc, uint64_t *offset);
 KThread *kernel_thread_list(void);
 
@@ -146,12 +147,41 @@ static void sample_one(HANDLE h, uint64_t id, bool in_svc, uint64_t *fns) {
     }
 }
 
+// LARECOMP_SAMPLE_CPU=1: no stack samples, only each thread's CPU time (user + kernel, GetThreadTimes) over the
+// window, logged as [cputime]: the same frames at a fixed frame rate costing less CPU is a real gain (A/B of builds).
+static uint64_t thread_cpu_100ns(HANDLE h) {
+    FILETIME c, e, k, u;
+    if (!GetThreadTimes(h, &c, &e, &k, &u)) return 0;
+    return ((uint64_t)k.dwHighDateTime << 32 | k.dwLowDateTime) + ((uint64_t)u.dwHighDateTime << 32 | u.dwLowDateTime);
+}
+static void cpu_window(uint64_t from, uint64_t to) {
+    struct { uint64_t id, t0; HANDLE h; } th[96];
+    int n = 0;
+    for (KThread *t = kernel_thread_list(); t && n < 80; t = t->anext)
+        if (t->started && !t->finished && t->host) th[n].id = t->id, th[n].h = (HANDLE)t->host, th[n++].t0 = thread_cpu_100ns((HANDLE)t->host);
+    for (int i = 0; i < g_nhost && n < 96; i++)
+        if (g_host[i].h) th[n].id = g_host[i].id, th[n].h = g_host[i].h, th[n++].t0 = thread_cpu_100ns(g_host[i].h);
+    uint64_t w0 = GetTickCount64();
+    while (renderer_game_frame() < to) Sleep(2);
+    double wall = (double)(GetTickCount64() - w0), game = 0;
+    char buf[1024];
+    int len = snprintf(buf, sizeof buf, "[cputime] frames %llu-%llu, %.0f ms wall:", (unsigned long long)from,
+                       (unsigned long long)renderer_game_frame(), wall);
+    for (int i = 0; i < n; i++) {
+        double ms = (thread_cpu_100ns(th[i].h) - th[i].t0) / 1e4;
+        if (th[i].id < 1000) game += ms;
+        if (ms >= 1 && len < (int)sizeof buf - 40) len += snprintf(buf + len, sizeof buf - len, " t%llu %.0f", (unsigned long long)th[i].id, ms);
+    }
+    LOG("%s | game threads %.0f ms\n", buf, game);
+}
+
 static void *sampler_main(void *arg) {
     const char *e = arg;
     uint64_t from = strtoull(e, NULL, 10), to = strchr(e, ':') ? strtoull(strchr(e, ':') + 1, NULL, 10) : from + 600;
     g_tab = calloc(SHASH, sizeof *g_tab);
     timeBeginPeriod(1);
     while (renderer_game_frame() < from) Sleep(5);
+    if (getenv("LARECOMP_SAMPLE_CPU") && atoi(getenv("LARECOMP_SAMPLE_CPU"))) { cpu_window(from, to); return NULL; }
     LOG("[sample] sampling game threads from frame %llu\n", (unsigned long long)renderer_game_frame());
     static uint64_t fns[SDEPTH];
     while (renderer_game_frame() < to) {
