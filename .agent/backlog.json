@@ -94,11 +94,11 @@
    "title": "Arquibancada piscando no título (desfoque alterna entre quadros)",
    "repro": "tests/scenarios/title.json quadros 1966-1970",
    "regression": "a definir",
-   "status": "open",
-   "attempts": 1,
+   "status": "blocked",
+   "attempts": 2,
    "max_attempts": 6,
    "stalls": 0,
-   "last_evidence_hash": "dc03718bbbd0",
+   "last_evidence_hash": "6349e6bf5b34",
    "history": [
     {
      "when": "2026-10-20T06:29:40",
@@ -106,6 +106,13 @@
      "status": "open",
      "evidence": "reproduz so no modo 60 fps: titulo 1440p60 alternancia 0,226 (SSIM vizinhos 0,71 x a dois 0,94); 30 fps -0,028 (normal), inclusive no build do ciclo 0",
      "note": "tests/regression/title60.json; proximo: despejar passes de quadros consecutivos a 60 para ver se e o efeito do jogo (mod de 60 fps) ou erro nosso"
+    },
+    {
+     "when": "2026-10-20T06:32:38",
+     "commit": "38ea613",
+     "status": "blocked",
+     "evidence": "passes de 4 quadros a 60 fps: so o passe 10 (plateia) alterna (SSIM vizinhos 0,717, a dois 0,995); passes 0-9 identicos. A plateia troca de quadro de animacao a cada quadro: animacao contada em quadros, dobrada pelo modo 60",
+     "note": "nao e bug do renderer; limitacao do modo 60 (mod). Correcao possivel: patch especifico do modo 60 para a animacao da plateia (item 60MODE-ANIM)"
     }
    ]
   },
@@ -335,6 +342,18 @@
    "attempts": 0,
    "max_attempts": 6,
    "stalls": 0
+  },
+  {
+   "id": "60MODE-ANIM",
+   "priority": "P2",
+   "order": 7.5,
+   "status": "open",
+   "attempts": 0,
+   "max_attempts": 6,
+   "stalls": 0,
+   "title": "Modo 60 fps: animacoes contadas em quadros andam no dobro (plateia do titulo pisca: G3). Achar e passo-a-passo pela metade no modo 60",
+   "repro": "tests/regression/title60.json (alternancia 0,226)",
+   "regression": "title60 G3-no-alternation"
   }
  ]
 }
