@@ -124,6 +124,11 @@ void rt_paths_init(void) {
 
 const char *rt_data_root(void) { return g_root; }
 
+const char *rt_cache_dir(void) {
+    const char *e = getenv("LARECOMP_CACHE_DIR");
+    return e && *e ? e : "cache";
+}
+
 bool rt_resource(const char *name, const char *dev_rel, char *out, size_t n) {
     char c[4][1100] = {{0}};
     if (name) {

@@ -778,6 +778,14 @@ const char *renderer_stats(void) {
         const uint32_t *w = (const uint32_t *)(uintptr_t)g_skin_watch;
         LOG("[skin] cb3 %llx now: row8 %08x %08x row9 %08x %08x\n", (unsigned long long)g_skin_watch, w[32], w[33], w[36], w[37]);
     }
+    {   // validation layer messages so far (LARECOMP_VK_VALIDATION=1, device.c)
+        extern atomic_uint g_vkval_errors, g_vkval_warnings;
+        unsigned e = atomic_load(&g_vkval_errors), w = atomic_load(&g_vkval_warnings);
+        if (e || w) {
+            size_t n = strlen(stats_text);
+            snprintf(stats_text + n, sizeof stats_text - n, " | vkval E %u W %u", e, w);
+        }
+    }
     if (stat_skipped) {
         size_t n = strlen(stats_text);
         snprintf(stats_text + n, sizeof stats_text - n, " [skip: noprog %llu compiling %llu failed %llu noobj %llu mode %llu pipe-building %llu pipe-failed %llu]",

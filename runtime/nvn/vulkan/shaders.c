@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "../../paths.h"
 #include "shaders.h"
 
 void vk_shaders_init(void) {  // (compilers are per thread: check shaderc works at all)
@@ -26,8 +27,8 @@ static uint64_t src_hash(const char *src, int stage) {
 }
 
 static uint32_t *cache_load(uint64_t h, size_t *nwords) {
-    char path[64];
-    snprintf(path, sizeof path, "cache/spirv/%016llx.spv", (unsigned long long)h);
+    char path[600];
+    snprintf(path, sizeof path, "%s/spirv/%016llx.spv", rt_cache_dir(), (unsigned long long)h);
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
@@ -43,9 +44,14 @@ static uint32_t *cache_load(uint64_t h, size_t *nwords) {
 
 static void cache_store(uint64_t h, const uint32_t *spv, size_t nwords) {
     static int made;
-    if (!made) { made = 1; mkdir("cache", 0755); mkdir("cache/spirv", 0755); }
-    char path[64], tmp[80];
-    snprintf(path, sizeof path, "cache/spirv/%016llx.spv", (unsigned long long)h);
+    char path[600], tmp[640];
+    if (!made) {
+        made = 1;
+        mkdir(rt_cache_dir(), 0755);
+        snprintf(path, sizeof path, "%s/spirv", rt_cache_dir());
+        mkdir(path, 0755);
+    }
+    snprintf(path, sizeof path, "%s/spirv/%016llx.spv", rt_cache_dir(), (unsigned long long)h);
     snprintf(tmp, sizeof tmp, "%s.%llx", path, (unsigned long long)(uintptr_t)&made ^ (unsigned long long)(uintptr_t)spv);
     FILE *f = fopen(tmp, "wb");
     if (!f) return;

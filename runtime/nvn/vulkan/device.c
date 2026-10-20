@@ -21,13 +21,27 @@ VkG g_vk;
 static SDL_Window *window;
 static atomic_bool ui_ready;
 static VkDebugUtilsMessengerEXT messenger;
+atomic_uint g_vkval_errors, g_vkval_warnings;  // validation layer messages (LARECOMP_VK_VALIDATION=1)
 
 // ================================================================== instance / device
 static VKAPI_ATTR VkBool32 VKAPI_CALL debug_cb(VkDebugUtilsMessageSeverityFlagBitsEXT sev, VkDebugUtilsMessageTypeFlagsEXT type,
                                                const VkDebugUtilsMessengerCallbackDataEXT *d, void *user) {
     (void)type, (void)user;
-    static int n;
-    if (sev >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT && n++ < 500) LOG("[vk] %s\n", d->pMessage);
+    // Counted by severity (the stats line's "vkval E n W n", read by tools/swsh/scenario.py); each message id is logged
+    // in full its first 5 times, so one repeating message does not hide the others ([vkval] lines).
+    static struct { int32_t id; int n; } seen[512];
+    static int nseen;
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    if (sev < VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) return VK_FALSE;
+    bool err = sev >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    atomic_fetch_add(err ? &g_vkval_errors : &g_vkval_warnings, 1);
+    pthread_mutex_lock(&lock);
+    int i = 0;
+    while (i < nseen && seen[i].id != d->messageIdNumber) i++;
+    if (i == nseen && nseen < 512) { seen[i].id = d->messageIdNumber; seen[i].n = 0; nseen++; }
+    bool show = i < nseen && seen[i].n++ < 5;
+    pthread_mutex_unlock(&lock);
+    if (show) LOG("[vkval] %s %s: %s\n", err ? "ERROR" : "WARNING", d->pMessageIdName ? d->pMessageIdName : "?", d->pMessage);
     return VK_FALSE;
 }
 
@@ -97,6 +111,15 @@ static void pick_device(void) {
     g_vk.phys = pd[best];
     free(pd);
     vkGetPhysicalDeviceProperties(g_vk.phys, &g_vk.props);
+    {   // (test reports record it: NVIDIA packs the driver version as 10.8.8.6 bits)
+        uint32_t v = g_vk.props.driverVersion;
+        if (g_vk.props.vendorID == 0x10de)
+            LOG("[vk] gpu %s, driver %u.%u, Vulkan %u.%u.%u\n", g_vk.props.deviceName, v >> 22, (v >> 14) & 0xff,
+                VK_API_VERSION_MAJOR(g_vk.props.apiVersion), VK_API_VERSION_MINOR(g_vk.props.apiVersion), VK_API_VERSION_PATCH(g_vk.props.apiVersion));
+        else
+            LOG("[vk] gpu %s, driver %#x, Vulkan %u.%u.%u\n", g_vk.props.deviceName, v, VK_API_VERSION_MAJOR(g_vk.props.apiVersion),
+                VK_API_VERSION_MINOR(g_vk.props.apiVersion), VK_API_VERSION_PATCH(g_vk.props.apiVersion));
+    }
     uint32_t nq = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(g_vk.phys, &nq, NULL);
     VkQueueFamilyProperties *qp = calloc(nq, sizeof *qp);
@@ -228,10 +251,12 @@ static void create_device(void) {
                                   .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = g_vk.qfam};
     VK_CHECK(vkCreateCommandPool(g_vk.dev, &pi, NULL, &g_vk.pool));
 
-    // pipeline cache: cache/vk_pipelines.bin (written by vk_pipeline_cache_save)
+    // pipeline cache: <cache dir>/vk_pipelines.bin (written by vk_pipeline_cache_save)
     size_t sz = 0;
     void *data = NULL;
-    FILE *fp = fopen("cache/vk_pipelines.bin", "rb");
+    char pcpath[600];
+    snprintf(pcpath, sizeof pcpath, "%s/vk_pipelines.bin", rt_cache_dir());
+    FILE *fp = fopen(pcpath, "rb");
     if (fp) {
         fseek(fp, 0, SEEK_END);
         sz = (size_t)ftell(fp);
@@ -256,12 +281,15 @@ void vk_pipeline_cache_save(void) {  // (exit and exec.c's periodic save: one wr
     if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, NULL) != VK_SUCCESS || !sz) { pthread_mutex_unlock(&lock); return; }
     void *data = malloc(sz);
     if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, data) == VK_SUCCESS) {
-        mkdir("cache", 0755);
-        FILE *f = fopen("cache/vk_pipelines.bin.tmp", "wb");
+        char path[600], tmp[640];
+        mkdir(rt_cache_dir(), 0755);
+        snprintf(path, sizeof path, "%s/vk_pipelines.bin", rt_cache_dir());
+        snprintf(tmp, sizeof tmp, "%s.tmp", path);
+        FILE *f = fopen(tmp, "wb");
         if (f) {
             bool ok = fwrite(data, 1, sz, f) == sz;
             fclose(f);
-            if (ok) { remove("cache/vk_pipelines.bin"); rename("cache/vk_pipelines.bin.tmp", "cache/vk_pipelines.bin"); }
+            if (ok) { remove(path); rename(tmp, path); }
         }
     }
     free(data);    pthread_mutex_unlock(&lock);

@@ -34,3 +34,11 @@ NVIDIA Corporation/
 fonts/*.bfttf
 fonts/*.ttf
 
+
+# Evidence with game images / data (tools/swsh/scenario.py, the supervisor): never versioned; the cycle reports
+# (reports/cycles/, reports/baseline/*.md) quote their numbers and paths
+reports/runs/
+reports/captures/
+reports/profiling/
+.agent/runtime/
+__pycache__/
