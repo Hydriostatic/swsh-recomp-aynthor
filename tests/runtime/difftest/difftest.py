@@ -8,7 +8,8 @@ opcode bits that select the instruction and its form), keeping data processing a
 lifter turns into straight-line C (no loads / stores, branches or system instructions in this first version). Each one
 runs from the same random machine states twice: in Unicorn (reference) and in the C the lifter emits, compiled
 with the runtime's headers (runtime/cpu.h, simd.h) as the game code is. X0-X30, SP, NZCV and V0-V31 must match.
-FPCR is 0 (round to nearest, no flush-to-zero) in both; FPSR is not compared. Nothing of the game is written outside
+FPCR is 0 (round to nearest, no flush-to-zero) in both unless --fpcr sets it (e.g. 0x1000000: FZ, as the game
+runs; | 0xC00000 for the rounding mode); FPSR is not compared. Nothing of the game is written outside
 build/difftest/ (ignored by git). Unicorn and Capstone are test-only Python packages (pip), never linked into the port.
 
 Technique: OpenSmash / ssbu-recomp tools/lifter/difftest.py and mk8-recomp tests/differential_* (see
@@ -27,6 +28,7 @@ from lifter import Lifter, Unsupported, is_ldst  # noqa: E402
 from nso import Nso  # noqa: E402
 
 BASE = 0x7000000000  # main's load address (runtime: module 0)
+FPCR = 0  # --fpcr
 MEM_BASE, MEM_SIZE = 0x7200200000, 0x10000  # --memory: the data the base register points into (same address both sides)
 OUT = os.path.join(ROOT, "build", "difftest")
 MSYS = r"C:\msys64\ucrt64\bin"
@@ -156,6 +158,7 @@ def gen_c(cases, path):
 #include <windows.h>
 #define MEM_BASE 0x%xULL
 #define MEM_SIZE 0x%x
+#define FPCR_VAL 0x%xULL
 int main(void) {
     unsigned char *mem = VirtualAlloc((void *)MEM_BASE, MEM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     if (mem != (unsigned char *)MEM_BASE) return 3;
@@ -165,6 +168,7 @@ int main(void) {
     while (fread(in, sizeof in, 1, stdin) == 1) {
         static Cpu c;
         memset(&c, 0, sizeof c);
+        c.fpcr = FPCR_VAL;
         uint32_t k; memcpy(&k, in, 4);
         memcpy(c.x, in + 4, 31 * 8);
         memcpy(&c.sp, in + 4 + 248, 8);
@@ -187,7 +191,7 @@ int main(void) {
     }
     return 0;
 }
-''' % (MEM_BASE, MEM_SIZE, STATE_BYTES))
+''' % (MEM_BASE, MEM_SIZE, FPCR, STATE_BYTES))
 
 
 def unicorn_run(w, pc, st):
@@ -209,7 +213,7 @@ def unicorn_run(w, pc, st):
     uc.reg_write(A.UC_ARM64_REG_X30, x[30])
     uc.reg_write(A.UC_ARM64_REG_SP, sp)
     uc.reg_write(A.UC_ARM64_REG_NZCV, nzcv)
-    uc.reg_write(A.UC_ARM64_REG_FPCR, 0)
+    uc.reg_write(A.UC_ARM64_REG_FPCR, FPCR)
     for i in range(32):
         uc.reg_write(A.UC_ARM64_REG_Q0 + i, v[i])
     uc.emu_start(pc, pc + 4, count=1)
@@ -238,7 +242,10 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--inject-mismatch", action="store_true", help="negative control: corrupt case 0 (must be reported)")
     ap.add_argument("--memory", action="store_true", help="loads / stores (the base register points into a data region)")
+    ap.add_argument("--fpcr", default="0", help="FPCR for both sides (hex): 0x1000000 = FZ, | 0x400000/0x800000/0xC00000 = RMode")
     args = ap.parse_args()
+    global FPCR
+    FPCR = int(args.fpcr, 16)
     os.makedirs(OUT, exist_ok=True)
     cases = sample(args.module, args.per_shape, args.max_cases, args.only, args.memory)
     print(f"{len(cases)} instruction cases sampled from {args.module}", flush=True)

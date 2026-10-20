@@ -209,6 +209,29 @@ SI int simd_fe_mode(uint64_t fpcr) {
     return m[(fpcr >> 22) & 3];
 }
 
+// Host rounding mode for the FPCR slow paths. Games set FPCR.FZ for good, so every FP op of those threads takes them:
+// MinGW's fegetround / fesetround (x87 + SSE control words, __mingw_setfp) were a quarter of the overworld's game
+// threads. On x86 the SSE control register is all the generated code uses: read it, and write it only when the mode
+// changes (never for FZ with round-to-nearest).
+#if defined(__x86_64__) || defined(__i386__)
+#include <xmmintrin.h>
+typedef unsigned SimdRound;
+SI SimdRound simd_round_save(void) { return _mm_getcsr(); }
+// rmode: FPCR.RMode (0 nearest, 1 +inf, 2 -inf, 3 zero) -> MXCSR.RC (0 nearest, 1 -inf, 2 +inf, 3 zero)
+SI void simd_round_to(SimdRound saved, unsigned rmode) {
+    static const unsigned rc[4] = {0, 2, 1, 3};
+    unsigned v = (saved & ~0x6000u) | rc[rmode & 3] << 13;
+    if (v != _mm_getcsr()) _mm_setcsr(v);
+}
+SI void simd_round_restore(SimdRound saved) { if (_mm_getcsr() != saved) _mm_setcsr(saved); }
+#else
+typedef int SimdRound;
+SI SimdRound simd_round_save(void) { return fegetround(); }
+SI void simd_round_to(SimdRound saved, unsigned rmode) { (void)saved; fesetround(simd_fe_mode((uint64_t)rmode << 22)); }
+SI void simd_round_restore(SimdRound saved) { fesetround(saved); }
+#endif
+#define FPCR_RMODE(fpcr) ((unsigned)((fpcr) >> 22) & 3)
+
 #define F s
 #define T float
 #define U uint32_t
@@ -263,11 +286,11 @@ SI double simd_s2d(Cpu *c, float x) {
 }
 SN float simd_d2s_slow(Cpu *c, double x) {
 #pragma STDC FENV_ACCESS ON
-    int old = fegetround();
-    fesetround(simd_fe_mode(c->fpcr));
+    SimdRound old = simd_round_save();
+    simd_round_to(old, FPCR_RMODE(c->fpcr));
     volatile double vx = x;
     volatile float r = (float)vx;
-    fesetround(old);
+    simd_round_restore(old);
     return r;
 }
 SI float simd_d2s(Cpu *c, double x) {
