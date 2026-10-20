@@ -56,6 +56,35 @@ static bool started, busy, dropping;
 static __thread bool on_render_thread;
 static pthread_t thread;
 
+// LARECOMP_RT_PROF=1: how long the game threads wait for this thread, by reason, logged every 2 s ([rtprof]).
+enum { W_QUEUE, W_PRESENT, W_CALL, W_DRAIN, W_TICKET, W_GPU, W_N };
+static const char *w_name[W_N] = {"queue full", "presents ahead", "call", "drain", "fence ticket", "fence gpu"};
+static uint64_t w_ns[W_N], w_n[W_N], w_busy_ns, w_last;
+static int w_on = -1;
+static uint64_t w_now(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1000000000ull + ts.tv_nsec; }
+static void w_add(int k, uint64_t t0) {
+    __atomic_add_fetch(&w_ns[k], w_now() - t0, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&w_n[k], 1, __ATOMIC_RELAXED);
+}
+static bool w_enabled(void) {
+    if (w_on < 0) w_on = getenv("LARECOMP_RT_PROF") ? atoi(getenv("LARECOMP_RT_PROF")) : 0;
+    return w_on;
+}
+static void w_report(void) {
+    uint64_t now = w_now();
+    if (!w_last) { w_last = now; return; }
+    if (now - w_last < 2000000000ull) return;
+    char buf[512];
+    int n = snprintf(buf, sizeof buf, "[rtprof] %.0f ms: render thread busy %.0f ms; game waits:", (now - w_last) / 1e6,
+                     __atomic_exchange_n(&w_busy_ns, 0, __ATOMIC_RELAXED) / 1e6);
+    for (int k = 0; k < W_N; k++) {
+        uint64_t ns = __atomic_exchange_n(&w_ns[k], 0, __ATOMIC_RELAXED), c = __atomic_exchange_n(&w_n[k], 0, __ATOMIC_RELAXED);
+        if (c) n += snprintf(buf + n, sizeof buf - n, " %s %.1f ms/%llu", w_name[k], ns / 1e6, (unsigned long long)c);
+    }
+    LOG("%s\n", buf);
+    w_last = now;
+}
+
 bool rt_active(void) {
     static int on = -1;
     if (on < 0) {
@@ -94,7 +123,9 @@ static void *render_main(void *arg) {
         Job j = queue[qhead % QN];
         busy = true;
         pthread_mutex_unlock(&lk);
+        uint64_t t0 = w_on > 0 ? w_now() : 0;
         if (!dropping || j.kind == RJ_CALL) run(&j);  // (a reboot drops queued lists and presents, never a caller's call)
+        if (t0) __atomic_add_fetch(&w_busy_ns, w_now() - t0, __ATOMIC_RELAXED);
         uint64_t seq = renderer_fence_seq();
         pthread_mutex_lock(&lk);
         qhead++;
@@ -129,8 +160,12 @@ static uint64_t push(Job j) {
         pthread_create(&thread, &attr, render_main, NULL);
         pthread_attr_destroy(&attr);
     }
-    while (qtail - qhead >= QN)
-        if (!wait_done()) { pthread_mutex_unlock(&lk); return 0; }
+    if (qtail - qhead >= QN) {
+        uint64_t t0 = w_enabled() ? w_now() : 0;
+        while (qtail - qhead >= QN)
+            if (!wait_done()) { pthread_mutex_unlock(&lk); return 0; }
+        if (t0) w_add(W_QUEUE, t0);
+    }
     queue[qtail % QN] = j;
     qtail++;
     uint64_t t = ++enq;
@@ -150,9 +185,14 @@ void rt_submit(uint64_t handle) {
 void rt_present(NvnTexture *t) {
     if (!t) return;
     if (!rt_active()) { backend_present(t); return; }
+    if (w_enabled()) w_report();
     pthread_mutex_lock(&lk);
-    while (pres_enq - pres_fin >= MAX_PRESENTS)
-        if (!wait_done()) { pthread_mutex_unlock(&lk); return; }
+    if (pres_enq - pres_fin >= MAX_PRESENTS) {
+        uint64_t t0 = w_enabled() ? w_now() : 0;
+        while (pres_enq - pres_fin >= MAX_PRESENTS)
+            if (!wait_done()) { pthread_mutex_unlock(&lk); return; }
+        if (t0) w_add(W_PRESENT, t0);
+    }
     pres_enq++;
     pthread_mutex_unlock(&lk);
     Job j = {.kind = RJ_PRESENT, .tex = t};
@@ -169,19 +209,23 @@ void rt_call(void (*fn)(void *), void *arg) {
     volatile int done = 0;
     Job j = {.kind = RJ_CALL, .fn = fn, .arg = arg, .done = &done};
     if (!push(j)) { return; }  // (a reboot: the call is dropped with the guest thread's work)
+    uint64_t t0 = w_enabled() ? w_now() : 0;
     pthread_mutex_lock(&lk);
     while (!done) pthread_cond_wait(&c_done, &lk);  // (the render thread never waits for the game: this ends)
     pthread_mutex_unlock(&lk);
+    if (t0) w_add(W_CALL, t0);
 }
 
 // Everything queued so far has run.
 void rt_drain(void) {
     if (!rt_active() || on_render_thread) return;
+    uint64_t t0 = w_enabled() ? w_now() : 0;
     pthread_mutex_lock(&lk);
     uint64_t target = enq;
     while (fin < target)
         if (!wait_done()) break;
     pthread_mutex_unlock(&lk);
+    if (t0) w_add(W_DRAIN, t0);
 }
 
 uint64_t rt_fence_ticket(void) {
@@ -194,12 +238,16 @@ uint64_t rt_fence_ticket(void) {
 // The fence of a ticket: the render thread has passed it, and the GPU has run what it submitted up to there.
 void rt_wait_ticket(uint64_t ticket) {
     if (!ticket) return;
+    uint64_t t0 = w_enabled() ? w_now() : 0;
     pthread_mutex_lock(&lk);
     while (fin < ticket)
         if (!wait_done()) { pthread_mutex_unlock(&lk); return; }
     uint64_t seq = seq_after[ticket & 1023];
     pthread_mutex_unlock(&lk);
+    uint64_t t1 = t0 ? w_now() : 0;
+    if (t0) w_add(W_TICKET, t0);
     renderer_wait_seq(seq);
+    if (t1) w_add(W_GPU, t1);
 }
 
 // Reboot (backend_reset, the guest threads stopped): the queued work belongs to the game that is going away.

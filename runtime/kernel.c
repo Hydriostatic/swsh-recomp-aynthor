@@ -212,6 +212,7 @@ static uint64_t next_thread_id = 0x50;
 // thread the same way.
 volatile int g_rt_unwind;
 static KThread *g_threads;  // every thread of this boot (g_klock)
+KThread *kernel_thread_list(void) { return g_threads; }  // (debug readers: runtime/sampler.c)
 
 void rt_unwind_point(void) {
     if (__builtin_expect(g_rt_unwind, 0) && t_cur) longjmp(t_cur->unwind, 1);
@@ -1042,7 +1043,9 @@ void kernel_reset(void) {
     pthread_mutex_unlock(&g_klock);
 }
 
+void sampler_start(void);
 void kernel_init(void) {
+    sampler_start();
     static bool dump_started;
     const char *dump = getenv("LARECOMP_THREAD_DUMP");
     if (dump && !dump_started) {
