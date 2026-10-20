@@ -158,10 +158,20 @@
    "repro": "supervisor.py baseline --profiles 1440p60",
    "regression": "benchmarks na test-matrix",
    "status": "open",
-   "attempts": 0,
+   "attempts": 1,
    "max_attempts": 6,
    "stalls": 0,
-   "note": "baseline DoD: interiores 60,0 fps, mediana 16,65, P99 17,9-19,5, P95 17,1-18,4 (falha por pouco); Postwick 41,7 quente / 19,8 fria. A/B de SUBS e depth clamp contaminados por runtimes de outro projeto (letsgo aa_quality.py) - refazer com a maquina livre"
+   "note": "baseline DoD: interiores 60,0 fps, mediana 16,65, P99 17,9-19,5, P95 17,1-18,4 (falha por pouco); Postwick 41,7 quente / 19,8 fria. A/B de SUBS e depth clamp contaminados por runtimes de outro projeto (letsgo aa_quality.py) - refazer com a maquina livre",
+   "last_evidence_hash": "94769c2027f1",
+   "history": [
+    {
+     "when": "2026-10-20T06:42:24",
+     "commit": "b707f2e",
+     "status": "open",
+     "evidence": "A/Bs a partir de 05:30 contaminados: aa_quality.py da sessao letsgo abre jogos Let's Go durante as rodadas (recheck 06:33: contaminated=true, 31-34 fps x 41,7 na baseline limpa)",
+     "note": "refazer quando a maquina estiver livre; o harness agora detecta e marca rodadas contaminadas"
+    }
+   ]
   },
   {
    "id": "STAB",

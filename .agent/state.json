@@ -1,13 +1,13 @@
 {
- "cycle": 13,
- "reference_commit": "38ea613",
+ "cycle": 14,
+ "reference_commit": "b707f2e",
  "active_item": null,
- "updated": "2026-10-20T06:32:38",
+ "updated": "2026-10-20T06:42:24",
  "phase": "Ciclos de correção (ciclo 2 concluído); baseline DoD 3x3 em andamento",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
  "last_hypothesis": "perf: Postwick limitado pela CPU (a separar com perfil por thread)",
  "next_action": "analisar a baseline DoD (reports/baseline/*.md); PERF60 com perfil real; G3 (título); difftest com memória; SYNC-HAZARD do present",
- "last_item": "G3",
- "last_result": "blocked",
- "last_evidence": "passes de 4 quadros a 60 fps: so o passe 10 (plateia) alterna (SSIM vizinhos 0,717, a dois 0,995); passes 0-9 identicos. A plateia troca de quadro de animacao a cada quadro: animacao contada em quadros, dobrada pelo modo 60"
+ "last_item": "PERF60",
+ "last_result": "open",
+ "last_evidence": "A/Bs a partir de 05:30 contaminados: aa_quality.py da sessao letsgo abre jogos Let's Go durante as rodadas (recheck 06:33: contaminated=true, 31-34 fps x 41,7 na baseline limpa)"
 }

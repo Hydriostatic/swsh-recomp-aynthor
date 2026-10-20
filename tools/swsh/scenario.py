@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,9 +62,11 @@ def sword_instances():
 
 
 def other_runtimes():
-    """Any lasrecomp.exe that is not a Sword 1.3.2 run of ours (another project's tests share the GPU and the CPU)."""
+    """Running lasrecomp.exe that are not a Sword 1.3.2 run of ours (another project's tests share the GPU and the CPU).
+    Only active ones count: a working set over 500 MB (a stopped leftover sits at ~40 MB, a running game uses GBs)."""
     ps = ("Get-CimInstance Win32_Process -Filter \"Name='lasrecomp.exe'\" | "
-          "Where-Object { $_.CommandLine -notlike '*extracted-132*' } | ForEach-Object { $_.ProcessId }")
+          "Where-Object { $_.CommandLine -notlike '*extracted-132*' -and $_.WorkingSetSize -gt 500MB } | "
+          "ForEach-Object { $_.ProcessId }")
     out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout
     return [int(x) for x in out.split() if x.strip().isdigit()]
 
@@ -147,6 +150,22 @@ def run_once(name, sc, args, run_dir):
     exe = os.path.join(ROOT, args.exe)
     t0 = time.time()
     before = set(sword_instances())
+    seen_others = []  # (sampled every 5 s while the run lasts)
+    mem_mb = []       # this run's working set, MB, every 5 s (leaks over long sessions)
+    stop_watch = threading.Event()
+
+    def watch():
+        while not stop_watch.wait(5):
+            o = other_runtimes()
+            if o:
+                seen_others.extend(o)
+            ps = ("Get-CimInstance Win32_Process -Filter \"Name='lasrecomp.exe'\" | Where-Object { $_.CommandLine -like "
+                  "'*extracted-132*' } | Measure-Object -Property WorkingSetSize -Maximum | ForEach-Object { $_.Maximum }")
+            out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout.strip()
+            if out.replace(".", "").isdigit():
+                mem_mb.append(round(float(out) / 2**20))
+    watcher = threading.Thread(target=watch, daemon=True)
+    watcher.start()
     with open(os.path.join(run_dir, "log.txt"), "wb") as log:
         p = subprocess.Popen([exe, "extracted-132", "--play"], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
@@ -170,7 +189,8 @@ def run_once(name, sc, args, run_dir):
         if children == [] and code == 0 and time.time() - t0 < 30:
             code = 0  # (re-executed child finished: its exit is the run's)
     secs = time.time() - t0
-    contaminated = bool(others_at_start or other_runtimes())
+    stop_watch.set()
+    contaminated = bool(others_at_start or seen_others or other_runtimes())
     if os.path.isdir(os.path.join(ROOT, "build", "frames")):  # (LARECOMP_SHOT_AT writes build/frames/)
         shutil.move(os.path.join(ROOT, "build", "frames"), frames)
     with open(os.path.join(run_dir, "log.txt"), encoding="utf-8", errors="replace") as f:
@@ -195,7 +215,9 @@ def run_once(name, sc, args, run_dir):
         "env": {k_: v for k_, v in env.items() if k_.startswith(("LARECOMP_", "VK_"))},
         "started": datetime.datetime.fromtimestamp(t0).isoformat(timespec="seconds"),
     }
-    summary = {"status": status, "exit_code": code, "seconds": round(secs, 1), "contaminated": contaminated,
+    mem = {"first_mb": mem_mb[0], "max_mb": max(mem_mb), "last_mb": mem_mb[-1], "samples": len(mem_mb),
+           "series_mb": mem_mb[::12]} if mem_mb else None
+    summary = {"status": status, "exit_code": code, "seconds": round(secs, 1), "contaminated": contaminated, "memory": mem,
                "frametime": ft, **{
         k_: v for k_, v in info.items() if k_ != "gpu"}}
     with open(os.path.join(run_dir, "meta.json"), "w") as f:

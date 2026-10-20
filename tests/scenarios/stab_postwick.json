@@ -1,0 +1,4 @@
+{"description": "Stability: 60 minutes walking a square around Postwick (LARECOMP_INPUT_LOOP), memory sampled every 5 s",
+ "save": "build/scenario-saves/frontdoor", "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8,2720:STICK_DOWN:150,2880:STICK_RIGHT:90,2980:STICK_UP:150,3140:STICK_LEFT:90",
+ "env": {"LARECOMP_INPUT_LOOP": "2720:520"},
+ "exit_at": 108000, "measure": [3000, 108000], "shots": [3300, 54000, 107900]}
