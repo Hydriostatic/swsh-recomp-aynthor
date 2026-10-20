@@ -1,0 +1,2 @@
+2995 instruction cases sampled from main
+2995 cases x 8 states: 2995 match, 0 DIFFER, 0 not runnable in Unicorn

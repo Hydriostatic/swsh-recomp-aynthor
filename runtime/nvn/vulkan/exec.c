@@ -23,6 +23,7 @@ static void watch_tex(NvnTexture *t, const char *what, const NvnTexture *from); 
 static uint64_t stat_draws, stat_skipped, stat_passes, stat_dispatches, stat_wait_ns, stat_flushes, stat_feedback_copies;
 static uint64_t stat_nvn_barriers, stat_barrier_bits[0x200];  // nvnCommandBufferBarrier: applied (nonzero), and per bit value
 static uint64_t stat_holds, stat_hold_ns, stat_hold_max_ns, stat_hold_claims, stat_hold_timeouts;  // (wait_built)
+static uint64_t stat_alpha_func[16];  // draws by NVN alpha test function (ColorState byte 2; 8 = ALWAYS, the default)
 // Skipped draws by reason (logged with the stats): 0 no program bound, 1 program still compiling, 2 program failed,
 // 3 no program object, 4 primitive mode, 5 pipeline still building, 6 pipeline failed.
 static uint64_t stat_skip_why[8];
@@ -833,6 +834,18 @@ const char *renderer_stats(void) {
                  (unsigned long long)stat_holds, stat_hold_ns / 1e6, stat_hold_max_ns / 1e6, (unsigned long long)stat_hold_claims,
                  (unsigned long long)stat_hold_timeouts);
         stat_holds = stat_hold_ns = stat_hold_max_ns = stat_hold_claims = stat_hold_timeouts = 0;
+    }
+    {   // draws with the NVN alpha test on (anything but ALWAYS): measured before implementing it (backlog ALPHATEST)
+        uint64_t on = 0;
+        for (int f = 0; f < 16; f++) if (f != 8) on += stat_alpha_func[f];
+        if (on) {
+            size_t n = strlen(stats_text);
+            n += snprintf(stats_text + n, sizeof stats_text - n, " | alpha test draws %llu [", (unsigned long long)on);
+            for (int f = 0; f < 16 && n < sizeof stats_text - 24; f++)
+                if (f != 8 && stat_alpha_func[f]) n += snprintf(stats_text + n, sizeof stats_text - n, " %d:%llu", f, (unsigned long long)stat_alpha_func[f]);
+            snprintf(stats_text + n, sizeof stats_text - n, " ]");
+        }
+        memset(stat_alpha_func, 0, sizeof stat_alpha_func);
     }
     {   // validation layer messages so far (LARECOMP_VK_VALIDATION=1, device.c)
         extern atomic_uint g_vkval_errors, g_vkval_warnings;
@@ -3056,6 +3069,7 @@ static void draw_(CmdRec *r, bool indexed) {
     k.topo_class = cls;
     k.poly_fill = st.poly[2] != 1;
     k.depth_clamp = st.depth_clamp && g_vk.depth_clamp;
+    stat_alpha_func[st.color_state[2] & 15]++;
     bool created;
     Pipe *pp = pipe_get(&k, false, &created);
     if (created) recipe_record(pr, &k);

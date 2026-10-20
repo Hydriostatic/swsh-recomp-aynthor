@@ -27,7 +27,7 @@ from lifter import Lifter, Unsupported, is_ldst  # noqa: E402
 from nso import Nso  # noqa: E402
 
 BASE = 0x7000000000  # main's load address (runtime: module 0)
-MEM_BASE, MEM_SIZE = 0x7200200000, 0x4000  # --memory: the data the base register points into (same address both sides)
+MEM_BASE, MEM_SIZE = 0x7200200000, 0x10000  # --memory: the data the base register points into (same address both sides)
 OUT = os.path.join(ROOT, "build", "difftest")
 MSYS = r"C:\msys64\ucrt64\bin"
 EDGE64 = [0, 1, 2, 0x7FFFFFFFFFFFFFFF, 0x8000000000000000, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF, 0x80000000, 0x7FFFFFFF,
@@ -81,7 +81,7 @@ def rand_state(rnd, w=0, memory=False):
     seed = rnd.getrandbits(64) | 1
     if memory:  # base register inside the data region (offsets up to +-4 KB stay in it), index register small
         rn, rm = (w >> 5) & 31, (w >> 16) & 31
-        ptr = MEM_BASE + MEM_SIZE // 2 + rnd.randrange(-64, 64) * 16
+        ptr = MEM_BASE + 0x2000 + rnd.randrange(0, 256) * 16  # (unsigned scaled offsets reach +32 KB, signed -4 KB)
         if rn == 31:
             sp = ptr
         else:
@@ -183,6 +183,7 @@ int main(void) {
         fwrite(&c.nzcv, 8, 1, stdout);
         fwrite(c.v, 32 * 16, 1, stdout);
         fwrite(&h, 8, 1, stdout);
+        fflush(stdout);  // (a case that faults loses only its own state)
     }
     return 0;
 }

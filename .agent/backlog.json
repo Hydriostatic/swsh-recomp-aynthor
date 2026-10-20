@@ -143,7 +143,8 @@
    "status": "open",
    "attempts": 0,
    "max_attempts": 6,
-   "stalls": 0
+   "stalls": 0,
+   "note": "baseline DoD: interiores 60,0 fps, mediana 16,65, P99 17,9-19,5, P95 17,1-18,4 (falha por pouco); Postwick 41,7 quente / 19,8 fria. A/B de SUBS e depth clamp contaminados por runtimes de outro projeto (letsgo aa_quality.py) - refazer com a maquina livre"
   },
   {
    "id": "STAB",
@@ -265,11 +266,11 @@
    "title": "nvnCommandBufferSetDepthClamp é no-op aqui (cmdbuf.c:323); SkyRecomp grava e aplica no pipeline",
    "repro": "runtime/nvn/cmdbuf.c:323",
    "regression": "sombras ao ar livre",
-   "status": "open",
+   "status": "fixed",
    "attempts": 0,
    "max_attempts": 6,
    "stalls": 0,
-   "note": "codigo pronto (nao compilado ate o fim da baseline DoD): CMD_SET_DEPTH_CLAMP -> PipeKey.depth_clamp -> depthClampEnable"
+   "note": "dc754ef; A/B sem diferenca mensuravel"
   },
   {
    "id": "DIFFTEST",
@@ -279,10 +280,10 @@
    "repro": "tools/lifter.py",
    "regression": "tests/runtime/difftest",
    "status": "partial",
-   "attempts": 1,
+   "attempts": 2,
    "max_attempts": 6,
    "stalls": 0,
-   "last_evidence_hash": "30446745e4f6",
+   "last_evidence_hash": "54097be97bee",
    "history": [
     {
      "when": "2026-10-20T03:38:20",
@@ -290,12 +291,19 @@
      "status": "partial",
      "evidence": "main: 2995 formatos x 8 estados, 0 diferencas; controle negativo detectado; sem memoria/desvios ainda",
      "note": "tests/runtime/difftest/difftest.py (9098f9c)"
+    },
+    {
+     "when": "2026-10-20T06:23:53",
+     "commit": "6ae046b",
+     "status": "partial",
+     "evidence": "main sem memoria: 2995 formatos x 8, 0 dif; com memoria (loads/stores, regiao de 64 KB): 371 formatos x 8, 0 dif",
+     "note": "faltam desvios e o sdk"
     }
    ]
   },
   {
    "id": "ALPHATEST",
-   "priority": "P1",
+   "priority": "P3",
    "order": 5.5,
    "title": "Alpha test do NVN ignorado: nvnColorStateSetAlphaTest guarda a funcao (color_state[2]) e CMD_SET_ALPHA_REF e gravado, mas o draw nao usa nenhum dos dois (SkyRecomp implementa por discard)",
    "repro": "medir quantos draws ligam o alpha test (contador na linha [vk])",
@@ -303,7 +311,8 @@
    "status": "open",
    "attempts": 0,
    "max_attempts": 6,
-   "stalls": 0
+   "stalls": 0,
+   "note": "medido 20/10: nenhum draw liga o alpha test do NVN no Postwick nem no quarto (contador alpha test draws na linha [vk]); implementar so se aparecer em outro cenario"
   },
   {
    "id": "PRESENT-SYNC",
