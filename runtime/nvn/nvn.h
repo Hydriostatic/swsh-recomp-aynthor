@@ -139,6 +139,7 @@ enum {
     CMD_DISCARD_DEPTH_STENCIL, CMD_SET_COPY_STRIDES, CMD_DRAW_TEXTURE, CMD_RESOLVE_DEPTH,
     CMD_OBJECT,  // (ours) x[0]: the game object the following draws belong to, 0 = none (frame interpolation)
     CMD_SET_VIEWPORT_SWIZZLES,  // x[0] first, x[1] count, extra: NVNviewportSwizzle[4] per viewport
+    CMD_SET_DEPTH_CLAMP,        // x[0] enable
     CMD_COUNT
 };
 

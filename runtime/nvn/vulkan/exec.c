@@ -55,7 +55,11 @@ void vk_collect_dead(void);
 
 // ================================================================== submissions
 // A submission = optional upload command buffer + the main one, signalling the timeline with its number.
-#define SUBS 8
+// The ring of submissions: the render thread can be at most this many submissions ahead of the GPU (a slot reused
+// waits for its previous submission). The game submits ~220 command lists a frame in Postwick, so 8 slots held the
+// render thread to the GPU nearly at every list. LARECOMP_VK_SUBS=<n> (1..256, default 8).
+#define SUBS_MAX 256
+static int SUBS = 8;  // (64 measured worse: Postwick 60 mean frame time B/A [1.001, 1.142])
 typedef struct {
     VkCommandBuffer main, upload;
     bool main_begun, upload_begun, ts;  // ts: GPU timestamps written (profiling)
@@ -63,7 +67,7 @@ typedef struct {
     VkDescriptorPool pools[16];
     int npools, cur_pool;
 } Sub;
-static Sub subs[SUBS];
+static Sub subs[SUBS_MAX];
 static int cur_sub;
 static uint64_t submit_seq;  // last submitted
 static pthread_mutex_t seq_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -701,6 +705,7 @@ static struct {
     float blend_color[4];
     uint32_t stencil_ref[2], stencil_mask[2], stencil_vmask[2];
     bool prim_restart;
+    bool depth_clamp;  // nvnCommandBufferSetDepthClamp: fragments beyond the near / far planes clamped instead of clipped
     uint32_t restart_index;
     uint64_t copy_row_stride, copy_image_stride;
     uint64_t obj;       // frame interpolation: the game object the current draws belong to (CMD_OBJECT), 0 = none
@@ -889,10 +894,15 @@ static void st_defaults(void) {
 }
 
 void vk_exec_init(void) {
+    if (getenv("LARECOMP_VK_SUBS")) {
+        int n = atoi(getenv("LARECOMP_VK_SUBS"));
+        SUBS = n < 1 ? 1 : n > SUBS_MAX ? SUBS_MAX : n;
+    }
+    LOG("[vk] submission ring: %d\n", SUBS);
     prof = getenv("LARECOMP_VK_PROF") != NULL;
     if (prof) {
         prof_up_ns = 0;
-        VkQueryPoolCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = SUBS * 2};
+        VkQueryPoolCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = SUBS_MAX * 2};
         if (vkCreateQueryPool(g_vk.dev, &qi, NULL, &prof_qp) != VK_SUCCESS) prof_qp = VK_NULL_HANDLE;
     }
     st_defaults();
@@ -1775,7 +1785,7 @@ typedef struct {
     uint32_t attr_mask;
     uint32_t stride[17], divisor[17], used_streams;
     uint8_t blend[8][8];
-    uint8_t blend_on, a2c, topo_class, poly_fill;
+    uint8_t blend_on, a2c, topo_class, poly_fill, depth_clamp;
     uint32_t write_mask[8];
 } PipeKey;
 
@@ -1884,7 +1894,8 @@ static void build_pipeline(void *arg) {
                                                  .topology = topo_class_base(k->topo_class)};
     VkPipelineViewportStateCreateInfo vs = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
     VkPipelineRasterizationStateCreateInfo rs = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-                                                 .polygonMode = k->poly_fill ? VK_POLYGON_MODE_FILL : VK_POLYGON_MODE_LINE, .lineWidth = 1};
+                                                 .polygonMode = k->poly_fill ? VK_POLYGON_MODE_FILL : VK_POLYGON_MODE_LINE, .lineWidth = 1,
+                                                 .depthClampEnable = k->depth_clamp};
     VkPipelineMultisampleStateCreateInfo ms = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
                                                .rasterizationSamples = (VkSampleCountFlagBits)k->samples, .alphaToCoverageEnable = k->a2c};
     VkPipelineDepthStencilStateCreateInfo ds = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
@@ -3044,6 +3055,7 @@ static void draw_(CmdRec *r, bool indexed) {
     k.a2c = st.ms[0xC] != 0;
     k.topo_class = cls;
     k.poly_fill = st.poly[2] != 1;
+    k.depth_clamp = st.depth_clamp && g_vk.depth_clamp;
     bool created;
     Pipe *pp = pipe_get(&k, false, &created);
     if (created) recipe_record(pr, &k);
@@ -4004,6 +4016,12 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_END: return;
         case CMD_OBJECT: st.obj = r->x[0]; st.obj_draw = 0; { static int d; if (getenv("LARECOMP_OBJDBG") && vk_frame_counter() == 1450 && d++ < 80) LOG("[objdbg] depth %d object %llx\n", depth,(unsigned long long)r->x[0]); } break;
         case CMD_JUMP: p = r->x[0]; continue;
+        case CMD_SET_DEPTH_CLAMP: {  // (LARECOMP_DEPTH_CLAMP=0: ignored, as before)
+            static int on = -1;
+            if (on < 0) on = !getenv("LARECOMP_DEPTH_CLAMP") || atoi(getenv("LARECOMP_DEPTH_CLAMP")) != 0;
+            st.depth_clamp = on && r->x[0] != 0;
+            break;
+        }
         case CMD_BARRIER:
             // nvnCommandBufferBarrier(bits): orders draws / dispatches and makes their writes visible to later reads
             // (render targets read as textures, written buffers read as constants). Recorded but ignored until 20/10
