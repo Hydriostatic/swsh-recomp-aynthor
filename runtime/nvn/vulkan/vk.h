@@ -36,6 +36,7 @@ typedef struct {
     VkSemaphore timeline;      // value = last completed submission number
     VkCommandPool pool;        // render thread only
     bool custom_border, divisor, host_import, depth_clamp;
+    bool gpl;  // VK_EXT_graphics_pipeline_library with fast linking (exec.c: pipelines linked from per-program parts)
     // window
     VkSurfaceKHR surface;
     VkSwapchainKHR swapchain;
