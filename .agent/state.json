@@ -1,13 +1,13 @@
 {
- "cycle": 19,
- "reference_commit": "4444d6d",
+ "cycle": 21,
+ "reference_commit": "5775ade",
  "active_item": "PERF60",
- "updated": "2026-10-20T18:40:00",
- "phase": "Ciclo 5: travadas de clima analisadas",
+ "updated": "2026-10-21T01:25:00",
+ "phase": "Ciclos 6-7: cache persistente de vértices, slots de submissão; cidade 65 -> 90 fps sem limite",
  "scope": "Pokémon Sword 1.3.2 + DLCs; Shield NÃO TESTADO (sem dump)",
- "last_hypothesis": "travadas grandes = primeira compilação de pipeline (cache salvo); ~160 ms = carregamento do próprio jogo (SetCpuBoostMode)",
- "next_action": "aguardar o jogador repetir a rota; G3 é intermitente (fase); LEAK; HEAPIMPORT",
+ "last_hypothesis": "travadas restantes: primeira compilação de pipelines (~120 ms cada no driver, em série na render thread)",
+ "next_action": "projeto: pré-tradução dos shaders do romfs + VK_EXT_graphics_pipeline_library; G3; LEAK",
  "last_item": "PERF60",
  "last_result": "partial",
- "last_evidence": "reports/cycles/005.md"
+ "last_evidence": "reports/cycles/005.md (ciclos 6 e 7)"
 }
