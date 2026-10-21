@@ -1,0 +1,13 @@
+{
+ "description": "City, from the player's save of 21/10 00:53 (standing). Uncapped it ran at ~61-67 fps: ~55 texture readbacks a frame, each one its own buffer and submission",
+ "save": "build/scenario-saves/city",
+ "input": "600:A:8,800:A:8",
+ "exit_at": 1300,
+ "measure": [
+  700,
+  1250
+ ],
+ "shots": [
+  1250
+ ]
+}

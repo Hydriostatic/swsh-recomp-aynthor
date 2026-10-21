@@ -61,7 +61,10 @@ void vk_collect_dead(void);
 // waits for its previous submission). The game submits ~220 command lists a frame in Postwick, so 8 slots held the
 // render thread to the GPU nearly at every list. LARECOMP_VK_SUBS=<n> (1..256, default 8).
 #define SUBS_MAX 256
-static int SUBS = 8;  // (64 measured worse: Postwick 60 mean frame time B/A [1.001, 1.142])
+// Submission slots in flight (LARECOMP_VK_SUBS). A town ends ~60 submissions a frame (one per texture readback): with 8
+// slots the render thread waited for the GPU to free one, 620 ms of every 2 s (town uncapped 65 fps; 128 slots: 90).
+// The open world is unchanged by it. (8 was chosen when each slot's first descriptor pool was full size, ~7 MB.)
+static int SUBS = 128;
 typedef struct {
     VkCommandBuffer main, upload;
     bool main_begun, upload_begun, ts;  // ts: GPU timestamps written (profiling)
@@ -408,10 +411,14 @@ VkDescriptorSet vk_alloc_set(VkDescriptorSetLayout layout) {
     for (;;) {
         if (s->cur_pool == s->npools) {
             if (s->npools == 16) FATAL("descriptor pools exhausted\n");
-            VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096},
-                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768},
-                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024}};
-            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 8192,
+            // A submission's pools grow as it fills them: 256 sets, then 512... up to 8192 (16 pools: >100k sets). A
+            // full-size first pool cost ~7 MB per submission slot, too much for the many short submissions of a town
+            // (~60 texture readbacks a frame, each ending one); most never need more than the first.
+            uint32_t sets = 256u << (s->npools < 5 ? s->npools : 5), f = 8192 / sets;
+            VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 32768 / f}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4096 / f},
+                                            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32768 / f},
+                                            {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1024 / f}, {VK_DESCRIPTOR_TYPE_SAMPLER, 1024 / f}};
+            VkDescriptorPoolCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = sets,
                                              .poolSizeCount = 5, .pPoolSizes = sizes};
             VK_CHECK(vkCreateDescriptorPool(g_vk.dev, &ci, NULL, &s->pools[s->npools++]));
         }
