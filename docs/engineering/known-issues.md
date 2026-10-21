@@ -13,7 +13,8 @@ O estado vivo fica em `.agent/backlog.json` (`python tools/agent/supervisor.py s
 | TESTCLOCK | P3 | A luma do quarto nos testes varia com a hora real apesar de LARECOMP_FIXED_TIME (123,0 / 125,4 / 122,7) | `reports/cycles/004.md` | a investigar; os limites das regressões passam |
 | HEAPIMPORT | P3 | Hitch de ~250 ms na primeira importação do heap do guest (3,2 GB) para memória global | `reports/cycles/004.md` | fazer no carregamento |
 | STAB | P2 | Sessões longas e salvar/carregar sem teste formal | — | NÃO TESTADO |
-| FPS120 | P3 | 120 fps | — | depois de 60 estáveis |
+| SPEED-UNCAP | P2 | Sem limite de fps (`LARECOMP_FPS=0`) o jogo acelera | o jogo avança a duração fixa da tabela de intervalos por quadro (1/30 s, ou 1/60 s no modo 60): `tests/scenarios/walkspeed*.json` mediu 3x (opção 30 a ~92 fps); a tela de título também é contada em quadros (2x no modo 60, como o G3); a 300-700 fps num carregamento o jogo parou num `svcBreak` | os modos 30 e 60 estão certos (PASSOU); sem limite fica só como medida de folga. Para mais de 60: passo de tempo pelo tempo real (FPS120) |
+| FPS120 | P3 | 120 fps | precisa de um passo de tempo ligado ao tempo real (a tabela de intervalos só tem 1/60 s por quadro como menor passo), ver SPEED-UNCAP | depois de 60 estáveis |
 
 ## Fechados (com evidência)
 | ID | Causa | Correção | Regressão |

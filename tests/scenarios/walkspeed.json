@@ -1,0 +1,15 @@
+{
+ "description": "Game speed: from the front door, the dialog presses of postwick, then the stick up for 60 frames (2 s at 30 fps). The final shot is matched against walkspeed_ref: 30 and 60 fps must stop at the same point (21/10: both at ~64 frames of the reference); uncapped (LARECOMP_FPS=0) stopped there too in a third of the time (3x)",
+ "save": "build/scenario-saves/frontdoor",
+ "input": "600:A:8,800:A:8,1000:A:8,1200:A:8,1400:A:8,2720:STICK_UP:60",
+ "exit_at": 2900,
+ "measure": [
+  2750,
+  2900
+ ],
+ "shots": [
+  2700,
+  2800,
+  2880
+ ]
+}

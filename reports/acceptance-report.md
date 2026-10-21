@@ -44,7 +44,7 @@ Status de cada critério: **PASSOU**, **FALHOU**, **NÃO TESTADO** ou **BLOQUEAD
 | P99 ≤ 20 ms | PASSOU (interiores) / FALHOU (Postwick) | interiores 17,9-19,5 ms; Postwick 28,6 |
 | Zero picos > 50 ms no jogo estabilizado | PASSOU (interiores; Postwick quente) / FALHOU (Postwick fria: 687) | baseline DoD |
 | 3 execuções reproduzíveis por cenário | PASSOU | variação entre execuções < 1% na maioria das combinações |
-| Velocidade da lógica intacta | NÃO TESTADO formalmente | o modo 60 (swsh60) muda só o intervalo; falta medir a velocidade do jogo pelo relógio |
+| Velocidade da lógica intacta | PASSOU (30 e 60 fps); FALHOU sem limite | `tests/scenarios/walkspeed*.json` (21/10): segurando o direcional o mesmo tempo real, 30 e 60 fps andam a mesma distância; sem limite (`LARECOMP_FPS=0`) o jogo avança um passo fixo por quadro: opção 30 a ~92 fps = 3x mais rápido, opção 60 a ~100 fps = ~1,7x (e um `svcBreak` do jogo a 300-700 fps num carregamento). Sem limite é só ferramenta de medida (SPEED-UNCAP) |
 
 ## Qualidade e regressões
 | Critério | Status | Evidência |
