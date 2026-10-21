@@ -17,7 +17,7 @@ Requirements
 - A CPU with AVX2, FMA and BMI2 (Intel Haswell / 2013 or newer, AMD Excavator / Zen or newer); checked at startup
 - A GPU whose driver supports Vulkan 1.3; see vulkan.gpuinfo.org for yours
 - RAM: about 5 GB while playing
-- About 15 GB of free disk space
+- About 17 GB of free disk space
 
 How to play
 -----------
@@ -30,8 +30,8 @@ How to play
    takes a while (about 20 minutes for the game code on a 20-thread CPU, longer with fewer threads).
 5. Click Play.
 
-The first time you visit a place, its shaders are built for your graphics card and the game can hitch for a moment;
-they are kept on disk, so the next visit is smooth.
+On the first start the game's shaders are prepared for your graphics card in the background (about 5 minutes; the
+game runs slower meanwhile). After that, new places hitch much less. They are kept on disk (cache\, about 2 GB).
 
 Options (start screen): resolution, fullscreen, anti-aliasing (SMAA), and 60 fps for the whole game (experimental).
 More in larecomp.ini.

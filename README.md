@@ -37,7 +37,8 @@ Switch (system services, NVN graphics on Vulkan, audio, controllers). **It is no
 - The game's **30 fps**, or **60 fps** for the whole game (like the community's 60 fps patch; experimental)
 - Keyboard and any controller
 - The **Expansion Pass** (The Isle of Armor, The Crown Tundra) from your own DLC data
-- Shaders built on background threads and cached on disk; the vertex data of static models kept in video memory
+- Every shader of the game prepared for your GPU on the first start, then kept on disk; the vertex data of static models
+  kept in video memory
 
 Measured on a Core i5-14600KF with an RTX 3080 at 2560x1440 (the reports are in
 [docs/engineering](docs/engineering/README.md)): the open world and towns hold **60 fps** once their shaders are built;
@@ -51,7 +52,7 @@ without the frame cap, about 90 to 120 fps.
 | CPU | x86-64 with AVX2, FMA and BMI2 (Intel Haswell / AMD Zen or newer) |
 | GPU | Vulkan 1.3 |
 | RAM | about 5 GB while playing |
-| Disk | about 15 GB free |
+| Disk | about 17 GB free (2 GB of it for the prepared shaders) |
 
 ## Supported games
 
@@ -73,13 +74,14 @@ without the frame cap, about 90 to 120 fps.
 Everything stays in that folder (settings in `larecomp.ini`, saves, shader caches, the log `lasrecomp.log`). To
 update, unzip a new release over it.
 
-**The first time you visit a place** its shaders are compiled for your GPU, which can make the game hitch for a moment
-(they are built in parallel and kept on disk; the next visit is smooth).
+**On the first start** the game's shaders are prepared for your GPU in the background (about 5 minutes on an 8-core
+CPU; the title screen runs slower meanwhile, and the game is playable). After that a first visit to a place mostly just
+links what was prepared; what isn't in the game files is still compiled when first seen, which can hitch for a moment.
 
 ## Known issues
 
-- First visits to a place and first uses of an effect can hitch while their shaders are built (see above); a
-  "preparing shaders" step on the first start is planned
+- During the first start's shader preparation the game runs slower, and a few shaders (those not in the game files)
+  still hitch the first time they are seen
 - At 60 fps the crowd on the title screen flickers (an animation counted in frames)
 - The Expansion Pass is not set up by the launcher yet: each DLC's RomFS has to be packed by hand into
   `extracted/aoc/<data id>.bin` ([docs/DIAGNOSTICO-SWSH.md](docs/DIAGNOSTICO-SWSH.md))

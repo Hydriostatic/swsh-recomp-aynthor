@@ -47,3 +47,35 @@ encaixa no que já temos:
 5. Em paralelo e independente: **estruturar o fluxo de controle no tradutor** (HWDER, Ryujinx), que deixa cada
    shader mais barato de compilar e de executar.
 Custo esperado (referência OpenSmash): minutos de preparação na primeira execução e alguns GB de disco.
+
+## Resultado (21/10/2026, etapas 1 a 4)
+- **Inventário** (`tools/swsh/shader_store.py`): 68.204 contêineres BNSH em 50.495 arquivos (`.gfpak` com LZ4,
+  `.ptcl`, `.arc`, `.bnsh*`), 18.587 estágios distintos (11.921 de vértice, 6.666 de fragmento, 104 MB). Cobrem 97,5%
+  dos estágios (3.221 de 3.303) e 97,9% dos programas das receitas de uma sessão real. 4.092 estágios de fragmento
+  ficam em variações sem estágio de vértice: o jogo escolhe o par na hora do draw.
+- **Preparação** (`runtime/nvn/vulkan/prep.c`): na primeira abertura, threads em prioridade ociosa leem os arquivos
+  (~30 s), traduzem cada estágio com as chaves dos draws do jogo e constroem a parte de pipeline dele. 11.921 partes de
+  vértice e 18.631 de fragmento em **4,8 min** (8 threads, i5-14600KF + RTX 3080). Disco: 1,3 GB de partes
+  (`vk_parts.bin`, cache próprio) + 0,6 GB de SPIR-V (agora comprimido com zstd).
+- **Layout universal → "independent sets"**: em vez de um layout único (64 texturas por set encheriam os pools), cada
+  parte usa só o set do seu estágio (`VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT`), e o layout de cada set
+  vem da reflexão do próprio estágio: a parte é a mesma em qualquer programa.
+- **Variantes**: vértice com as posições 7, 8 e 11 inteiras (onde o estágio as lê); fragmento com todas as saídas do
+  vértice e com as de cada par das variações que deixe entradas de fora (só os bits lidos mudam a tradução).
+  Na entrada da cidade: GLSL igual ao do draw em 46 de 46 estágios de vértice e 183 de 199 de fragmento preparados.
+- **Medido como instalação nova** (cache vazia + `LARECOMP_DRIVER_CACHE_NONCE`; a rodada "com" usa a cache que a
+  preparação deixou):
+
+  | Cenário | Sem preparação | Com preparação |
+  |---|---|---|
+  | Entrada na cidade | 10-11 quadros > 50 ms, 3,5-4,0 s | 5, 2,2 s (o que resta são os carregamentos do jogo, presentes em toda rodada) |
+  | Mundo aberto (`openworld2`) | 14, 2,8 s | 6, 1,5 s |
+  | Batalha selvagem | 50, 6,4 s, P99 97 ms | 9-12, 2,1-2,5 s, P99 34-37 ms |
+
+- Custos: com cache quente e sem limite de fps, mundo aberto 75,5 → 73,6 fps (pipeline library ligada; com a trava de
+  60 fps, nada). Imagens sem diferença sistemática. Durante a preparação a tela de título cai para ~20 fps.
+- Erros no caminho: gravar 1 GB de cache de pipelines bloqueava toda criação de pipeline por 6,4 s (cache separado,
+  gravado só no fim e ao sair); a flag `RETAIN_LINK_TIME_OPTIMIZATION` era inútil (só há ligação rápida); 8
+  variantes por estágio de vértice davam 7,4 GB e travadas de 16 s no boot.
+- Falta: a etapa 5 (fluxo de controle estruturado no tradutor); o DLC fora do RomFS principal (`aoc/*.bin`) ainda não
+  é lido pela preparação; um aviso de progresso na tela.
