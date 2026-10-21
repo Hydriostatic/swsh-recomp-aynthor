@@ -1020,6 +1020,7 @@ static void queue_job(void (*fn)(void *), void *arg, bool low) {
 }
 static void run_job(void (*fn)(void *), void *arg) { queue_job(fn, arg, false); }
 static void run_job_low(void (*fn)(void *), void *arg) { queue_job(fn, arg, true); }
+bool vk_shader_jobs_waiting(void) { return __atomic_load_n(&jobs_head, __ATOMIC_RELAXED) != NULL; }  // (prep.c yields to them)
 static bool wait_built(_Atomic int *state, void (*fn)(void *), void *arg);  // (draws and dispatches: below)
 
 // Takes the job (fn, arg) out of either queue if no worker has started it: the caller then runs it itself.
@@ -1678,18 +1679,34 @@ typedef struct {
     int nbinds;
     VkDescriptorSetLayout set_layout[2];
     VkPipelineLayout layout;
+    VkPipelineLayout stage_layout[2];  // with pipeline parts (g_vk.gpl): {vertex set, -} and {-, fragment set}, below
     bool vs_uses_vid;
     uint64_t chash[2];  // the stages' content hashes (NvnShaderStage.content_hash; 0 unknown): pipeline recipes
     _Atomic int state;  // 0 building, 1 ready, 2 failed
 } Prog;
 
+// A layout of one stage's set alone (pipeline parts): the other set VK_NULL_HANDLE, independent sets. Each set's
+// layout comes from that stage's own reflection, so a stage's part is the same in every program that uses it, and one
+// built ahead of the game (prep.c) is a pipeline cache hit at the draw.
+VkPipelineLayout vk_stage_layout(VkDescriptorSetLayout sl, int set) {
+    VkDescriptorSetLayout sets[2] = {set ? VK_NULL_HANDLE : sl, set ? sl : VK_NULL_HANDLE};
+    VkPipelineLayoutCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                     .flags = VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT, .setLayoutCount = 2, .pSetLayouts = sets};
+    VkPipelineLayout l;
+    VK_CHECK(vkCreatePipelineLayout(g_vk.dev, &ci, NULL, &l));
+    return l;
+}
+
 static VkPipelineLayout make_layout(Prog *p, int nsets, VkShaderStageFlags s0, VkShaderStageFlags s1) {
     p->set_layout[0] = vk_set_layout(p->binds, p->nbinds, 0, s0);
     if (nsets > 1) p->set_layout[1] = vk_set_layout(p->binds, p->nbinds, 1, s1);
+    bool parts = g_vk.gpl && nsets == 2;
     VkPipelineLayoutCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = (uint32_t)nsets,
-                                     .pSetLayouts = p->set_layout};
+                                     .pSetLayouts = p->set_layout,
+                                     .flags = parts ? VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT : 0};
     VkPipelineLayout l;
     VK_CHECK(vkCreatePipelineLayout(g_vk.dev, &ci, NULL, &l));
+    if (parts) for (int i = 0; i < 2; i++) p->stage_layout[i] = vk_stage_layout(p->set_layout[i], i);
     return l;
 }
 
@@ -1848,6 +1865,14 @@ static void translate_program(void *arg) {
     p->vs_uses_vid = strstr(p->vi->msl, "gl_VertexIndex") != NULL;
     save_glsl(p->vi->msl, p->code[0], "vs");
     save_glsl(p->fi->msl, p->code[1], "fs");
+    if (getenv("LARECOMP_PREP_DEBUG")) {  // (prep.c logs the same line for what it built: the keys must match)
+        for (int i = 0; i < 2; i++) {
+            const char *m = i ? p->fi->msl : p->vi->msl;
+            uint64_t h = 0xcbf29ce484222325ull;
+            for (const char *q = m; q && *q; q++) h = (h ^ (uint8_t)*q) * 0x100000001B3ull;
+            LOG("[prepdbg] draw %s %016llx glsl %016llx\n", i ? "fs" : "vs", (unsigned long long)p->chash[i], (unsigned long long)h);
+        }
+    }
     compile_program(p);  // (this worker: queued again it would wait behind the other translations)
 }
 
@@ -2485,7 +2510,7 @@ static VkPipeline gpl_build_part(int kind, const PipeKey *k) {
         ri.stencilAttachmentFormat = k->stencil;
     }
     VkGraphicsPipelineCreateInfo pi = {.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &ri,
-                                       .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR | VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT};
+                                       .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR};  // (no link-time optimization info: only fast links are made, and it made each part ~75 KB in the pipeline cache)
     VkPipelineDynamicStateCreateInfo dy = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     pi.pDynamicState = &dy;
     // (vertex input)
@@ -2538,7 +2563,7 @@ static VkPipeline gpl_build_part(int kind, const PipeKey *k) {
         pi.stageCount = 1; pi.pStages = &st;
         pi.pViewportState = &vs;
         pi.pRasterizationState = &rs;
-        pi.layout = k->prog->layout;
+        pi.layout = k->prog->stage_layout[0];
         dy.dynamicStateCount = sizeof GPL_DYN_PR / sizeof GPL_DYN_PR[0]; dy.pDynamicStates = GPL_DYN_PR;
         break;
     case GP_FS:
@@ -2547,7 +2572,7 @@ static VkPipeline gpl_build_part(int kind, const PipeKey *k) {
         pi.stageCount = 1; pi.pStages = &st;
         pi.pDepthStencilState = &ds;
         pi.pMultisampleState = &ms;
-        pi.layout = k->prog->layout;
+        pi.layout = k->prog->stage_layout[1];
         dy.dynamicStateCount = sizeof GPL_DYN_FS / sizeof GPL_DYN_FS[0]; dy.pDynamicStates = GPL_DYN_FS;
         break;
     case GP_FO:
@@ -2573,7 +2598,8 @@ static VkPipeline gpl_build_part(int kind, const PipeKey *k) {
     }
     VkPipeline p = VK_NULL_HANDLE;
     uint64_t t0 = SDL_GetTicksNS();
-    VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &p);
+    VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache_parts, 1, &pi, NULL, &p);  // (their own cache: device.c)
+    atomic_store(&g_vk.parts_dirty, 1);
     atomic_fetch_add(&stat_gpl_part_ns, SDL_GetTicksNS() - t0);
     atomic_fetch_add(&stat_gpl_parts, 1);
     if (r != VK_SUCCESS) {
@@ -2625,6 +2651,17 @@ static VkPipeline gpl_link(const PipeKey *k) {
     atomic_fetch_add(&stat_gpl_links, 1);
     if (r != VK_SUCCESS) { atomic_fetch_add(&stat_gpl_failed, 1); return VK_NULL_HANDLE; }
     return p;
+}
+
+// The vertex (pre-rasterization) or fragment part of one stage, as a draw builds it with the most common state of this
+// game (filled polygons, no depth clamp, one sample, no alpha to coverage: 3298 of 3687 recorded pipelines), for the
+// shader preparation (prep.c). The caller destroys it: what it is for is the pipeline cache entry it leaves.
+VkPipeline vk_prep_part(int fragment, VkShaderModule m, VkPipelineLayout layout) {
+    Prog p = {0};
+    PipeKey k = {.prog = &p, .samples = 1, .poly_fill = 1};
+    if (fragment) p.fs = m; else p.vs = m;
+    p.stage_layout[fragment] = layout;
+    return gpl_build_part(fragment ? GP_FS : GP_PR, &k);
 }
 
 // ================================================================== feedback snapshots (renderer.m resolve_feedback)

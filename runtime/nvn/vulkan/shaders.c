@@ -1,6 +1,7 @@
 // GLSL -> SPIR-V (shaderc), descriptor layouts from the SPIR-V itself, translated NVN programs, built-in shaders.
 #include <pthread.h>
 #include <shaderc/shaderc.h>
+#include <zstd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -26,18 +27,42 @@ static uint64_t src_hash(const char *src, int stage) {
     return h;
 }
 
-static uint32_t *cache_load(uint64_t h, size_t *nwords) {
-    char path[600];
-    snprintf(path, sizeof path, "%s/spirv/%016llx.spv", rt_cache_dir(), (unsigned long long)h);
+// Files are zstd frames (<hash>.spz: magic, the SPIR-V's size, the frame): the translator's SPIR-V is ~150 KB a stage
+// and compresses ~4x, and the shader preparation (prep.c) stores every stage of the game (~20k). Plain .spv files of
+// earlier builds are still read.
+#define SPZ_MAGIC 0x315A5053u  // "SPZ1"
+
+static uint8_t *read_file(const char *path, long *n) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
-    long n = ftell(f);
+    *n = ftell(f);
     fseek(f, 0, SEEK_SET);
-    uint32_t *d = n > 20 && n % 4 == 0 ? malloc((size_t)n) : NULL;
-    if (d && fread(d, 1, (size_t)n, f) != (size_t)n) { free(d); d = NULL; }
+    uint8_t *d = *n > 8 ? malloc((size_t)*n) : NULL;
+    if (d && fread(d, 1, (size_t)*n, f) != (size_t)*n) { free(d); d = NULL; }
     fclose(f);
-    if (d && d[0] != 0x07230203) { free(d); d = NULL; }
+    return d;
+}
+
+static uint32_t *cache_load(uint64_t h, size_t *nwords) {
+    char path[600];
+    long n = 0;
+    snprintf(path, sizeof path, "%s/spirv/%016llx.spz", rt_cache_dir(), (unsigned long long)h);
+    uint8_t *z = read_file(path, &n);
+    if (z) {
+        uint32_t magic, size;
+        memcpy(&magic, z, 4);
+        memcpy(&size, z + 4, 4);
+        uint32_t *d = magic == SPZ_MAGIC && size > 20 && size % 4 == 0 && size < (64u << 20) ? malloc(size) : NULL;
+        if (d && ZSTD_decompress(d, size, z + 8, (size_t)n - 8) != size) { free(d); d = NULL; }
+        free(z);
+        if (d && d[0] == 0x07230203) { *nwords = size / 4; return d; }
+        free(d);
+        return NULL;
+    }
+    snprintf(path, sizeof path, "%s/spirv/%016llx.spv", rt_cache_dir(), (unsigned long long)h);
+    uint32_t *d = (uint32_t *)read_file(path, &n);
+    if (d && (n % 4 || d[0] != 0x07230203)) { free(d); d = NULL; }
     if (d) *nwords = (size_t)n / 4;
     return d;
 }
@@ -51,12 +76,19 @@ static void cache_store(uint64_t h, const uint32_t *spv, size_t nwords) {
         snprintf(path, sizeof path, "%s/spirv", rt_cache_dir());
         mkdir(path, 0755);
     }
-    snprintf(path, sizeof path, "%s/spirv/%016llx.spv", rt_cache_dir(), (unsigned long long)h);
+    size_t cap = ZSTD_compressBound(nwords * 4);
+    uint8_t *z = malloc(cap + 8);
+    size_t zn = ZSTD_compress(z + 8, cap, spv, nwords * 4, 3);
+    if (ZSTD_isError(zn)) { free(z); return; }
+    uint32_t hdr[2] = {SPZ_MAGIC, (uint32_t)(nwords * 4)};
+    memcpy(z, hdr, 8);
+    snprintf(path, sizeof path, "%s/spirv/%016llx.spz", rt_cache_dir(), (unsigned long long)h);
     snprintf(tmp, sizeof tmp, "%s.%llx", path, (unsigned long long)(uintptr_t)&made ^ (unsigned long long)(uintptr_t)spv);
     FILE *f = fopen(tmp, "wb");
-    if (!f) return;
-    bool ok = fwrite(spv, 4, nwords, f) == nwords;
+    if (!f) { free(z); return; }
+    bool ok = fwrite(z, 1, zn + 8, f) == zn + 8;
     fclose(f);
+    free(z);
     if (!ok || rename(tmp, path) != 0) remove(tmp);  // (another thread may have stored it first)
 }
 

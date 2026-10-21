@@ -161,6 +161,31 @@ void vk_device_fault_report(void) {
             (unsigned long long)vend[i].vendorFaultData);
 }
 
+static VkPipelineCache cache_open(const char *name) {
+    size_t sz = 0;
+    void *data = NULL;
+    char path[600];
+    snprintf(path, sizeof path, "%s/%s", rt_cache_dir(), name);
+    FILE *fp = fopen(path, "rb");
+    if (fp) {
+        fseek(fp, 0, SEEK_END);
+        sz = (size_t)ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        data = malloc(sz);
+        if (data && fread(data, 1, sz, fp) != sz) sz = 0;
+        fclose(fp);
+    }
+    VkPipelineCacheCreateInfo pc = {.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, .initialDataSize = data ? sz : 0,
+                                    .pInitialData = data};
+    VkPipelineCache c;
+    if (vkCreatePipelineCache(g_vk.dev, &pc, NULL, &c) != VK_SUCCESS) {
+        pc.initialDataSize = 0;
+        VK_CHECK(vkCreatePipelineCache(g_vk.dev, &pc, NULL, &c));
+    }
+    free(data);
+    return c;
+}
+
 static void create_device(void) {
     uint32_t ne = 0;
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, NULL);
@@ -175,12 +200,12 @@ static void create_device(void) {
     if (g_vk.divisor) ext[n_ext++] = VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME;
     g_vk.host_import = has_ext(ep, ne, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);  // guest heap as a GPU buffer (exec.c)
     if (g_vk.host_import) ext[n_ext++] = VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME;
-    // Graphics pipeline library (exec.c): a new state combination links precompiled per-program parts instead of compiling a
-    // whole pipeline in the driver. Off by default (LARECOMP_GPL=1 turns it on): measured with a truly cold driver
-    // cache, a part costs about what a whole pipeline does - the cost is in each shader, not the state combinations
-    // (reports/cycles/005.md, cycle 8).
+    // Graphics pipeline library (exec.c): a new state combination links precompiled per-stage parts instead of compiling a
+    // whole pipeline in the driver. On its own a cold part costs about what a whole pipeline does (the cost is in each
+    // shader: reports/cycles/005.md, cycle 8), but the shader preparation (prep.c) builds every stage's part ahead of
+    // the game, and then a first visit only links: on by default where the driver links fast. LARECOMP_GPL=0: off.
     {
-        bool want = getenv("LARECOMP_GPL") && atoi(getenv("LARECOMP_GPL")) != 0;
+        bool want = !getenv("LARECOMP_GPL") || atoi(getenv("LARECOMP_GPL")) != 0;
         VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gf = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT};
         VkPhysicalDeviceFeatures2 q = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &gf};
         VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT gp = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT};
@@ -274,39 +299,24 @@ static void create_device(void) {
                                   .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, .queueFamilyIndex = g_vk.qfam};
     VK_CHECK(vkCreateCommandPool(g_vk.dev, &pi, NULL, &g_vk.pool));
 
-    // pipeline cache: <cache dir>/vk_pipelines.bin (written by vk_pipeline_cache_save)
-    size_t sz = 0;
-    void *data = NULL;
-    char pcpath[600];
-    snprintf(pcpath, sizeof pcpath, "%s/vk_pipelines.bin", rt_cache_dir());
-    FILE *fp = fopen(pcpath, "rb");
-    if (fp) {
-        fseek(fp, 0, SEEK_END);
-        sz = (size_t)ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-        data = malloc(sz);
-        if (fread(data, 1, sz, fp) != sz) sz = 0;
-        fclose(fp);
-    }
-    VkPipelineCacheCreateInfo pc = {.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, .initialDataSize = sz,
-                                    .pInitialData = data};
-    if (vkCreatePipelineCache(g_vk.dev, &pc, NULL, &g_vk.pcache) != VK_SUCCESS) {
-        pc.initialDataSize = 0;
-        VK_CHECK(vkCreatePipelineCache(g_vk.dev, &pc, NULL, &g_vk.pcache));
-    }
-    free(data);
+    // pipeline caches: <cache dir>/vk_pipelines.bin (written by vk_pipeline_cache_save) and, with pipeline parts,
+    // vk_parts.bin: the parts alone (~75 KB each, ~1 GB once the shader preparation is done, prep.c). Kept apart so the
+    // periodic save of the first stays small: vkGetPipelineCacheData of the whole 1 GB took 6.4 s, and every pipeline
+    // created meanwhile waited for it (1.4-2.7 s frames in a town).
+    g_vk.pcache = cache_open("vk_pipelines.bin");
+    if (g_vk.gpl) g_vk.pcache_parts = cache_open("vk_parts.bin");
 }
 
-void vk_pipeline_cache_save(void) {  // (exit and exec.c's periodic save: one writer of the .tmp at a time)
-    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static void cache_write(VkPipelineCache c, const char *name) {
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;  // (one writer of the .tmp files at a time)
     pthread_mutex_lock(&lock);
     size_t sz = 0;
-    if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, NULL) != VK_SUCCESS || !sz) { pthread_mutex_unlock(&lock); return; }
+    if (!c || vkGetPipelineCacheData(g_vk.dev, c, &sz, NULL) != VK_SUCCESS || !sz) { pthread_mutex_unlock(&lock); return; }
     void *data = malloc(sz);
-    if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, data) == VK_SUCCESS) {
+    if (vkGetPipelineCacheData(g_vk.dev, c, &sz, data) == VK_SUCCESS) {
         char path[600], tmp[640];
         mkdir(rt_cache_dir(), 0755);
-        snprintf(path, sizeof path, "%s/vk_pipelines.bin", rt_cache_dir());
+        snprintf(path, sizeof path, "%s/%s", rt_cache_dir(), name);
         snprintf(tmp, sizeof tmp, "%s.tmp", path);
         FILE *f = fopen(tmp, "wb");
         if (f) {
@@ -315,7 +325,14 @@ void vk_pipeline_cache_save(void) {  // (exit and exec.c's periodic save: one wr
             if (ok) { remove(path); rename(tmp, path); }
         }
     }
-    free(data);    pthread_mutex_unlock(&lock);
+    free(data);
+    pthread_mutex_unlock(&lock);
+}
+
+void vk_pipeline_cache_save(void) { cache_write(g_vk.pcache, "vk_pipelines.bin"); }  // (exit and exec.c's periodic save)
+
+void vk_parts_cache_save(void) {  // (the end of the shader preparation, and exit: only when a part was added)
+    if (g_vk.pcache_parts && atomic_exchange(&g_vk.parts_dirty, 0)) cache_write(g_vk.pcache_parts, "vk_parts.bin");
 }
 
 // ================================================================== swapchain
@@ -815,6 +832,7 @@ static void quick_exit_handler(void) {
         vkDeviceWaitIdle(g_vk.dev);
         if (trace) LOG("[vk] exit: saving the pipeline cache\n");
         vk_pipeline_cache_save();
+        vk_parts_cache_save();
     }
     if (trace) LOG("[vk] exit: terminating\n");
     fflush(stdout);

@@ -171,6 +171,7 @@ void plat_thread_realtime(uint64_t period_ns) {
 }
 
 void plat_thread_background(void) { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL); }
+void plat_thread_idle(void) { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE); }
 
 // ---- process
 // Release builds are GUI-subsystem executables (no console window): stdout / stderr go to lasrecomp.log next to the

@@ -21,6 +21,7 @@
 
 void vk_device_fault_report(void);
 void vk_pipeline_cache_save(void);  // cache/vk_pipelines.bin (any thread)
+void vk_parts_cache_save(void);     // cache/vk_parts.bin, when a part was added (any thread)
 #define VK_CHECK(x) do { VkResult r_ = (x); if (r_ != VK_SUCCESS) { if (r_ == VK_ERROR_DEVICE_LOST) vk_device_fault_report(); \
     FATAL("%s failed: %d (%s:%d)\n", #x, r_, __FILE__, __LINE__); } } while (0)
 
@@ -33,6 +34,8 @@ typedef struct {
     VmaAllocator vma;
     VkPhysicalDeviceProperties props;
     VkPipelineCache pcache;
+    VkPipelineCache pcache_parts;  // pipeline parts only (g_vk.gpl): device.c
+    _Atomic int parts_dirty;       // a part was built since vk_parts.bin was written
     VkSemaphore timeline;      // value = last completed submission number
     VkCommandPool pool;        // render thread only
     bool custom_border, divisor, host_import, depth_clamp;

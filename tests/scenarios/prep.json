@@ -1,0 +1,15 @@
+{
+ "description": "First start of a new install: the title screen until the shader preparation is done, then exit. Run it with its own LARECOMP_CACHE_DIR (and LARECOMP_DRIVER_CACHE_NONCE); the next run with that cache plays",
+ "save": "build/scenario-saves/room",
+ "input": "",
+ "exit_at": 400000,
+ "timeout_s": 5400,
+ "measure": [
+  300,
+  1000
+ ],
+ "env": {
+  "LARECOMP_SHADER_PREP": "auto",
+  "LARECOMP_SHADER_PREP_EXIT": "1"
+ }
+}

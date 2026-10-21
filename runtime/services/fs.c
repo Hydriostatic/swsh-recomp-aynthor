@@ -369,6 +369,9 @@ static void storage(Service *s, IpcReq *req, IpcResp *resp) {
     }
 }
 
+void shader_prep_romfs(int fd, void (*each)(int, void (*)(const char *, int, uint64_t, uint64_t, void *), void *));  // nvn/vulkan/prep.c
+static void romfs_each(int fd, void (*fn)(const char *path, int fd, uint64_t off, uint64_t size, void *u), void *u);
+
 static Service *open_romfs_storage(void) {
     if (romfs_fd < 0) {
         char path[1024];
@@ -376,6 +379,7 @@ static Service *open_romfs_storage(void) {
         romfs_fd = open(path, O_RDONLY);
         if (romfs_fd < 0) FATAL("cannot open %s (set up the game files on the start screen)\n", path);
         rom_index(romfs_fd);
+        shader_prep_romfs(romfs_fd, romfs_each);
     }
     Storage *st = calloc(1, sizeof *st);
     st->fd = romfs_fd;
@@ -465,6 +469,13 @@ bool romfs_image_file(const char *path, int *fd, uint64_t *off, uint64_t *size) 
             return true;
         }
     return false;
+}
+
+// Every file of the RomFS image, for the shader preparation (runtime/nvn/vulkan/prep.c): the image's fd, then each
+// file's path and byte range in it (the callback copies what it keeps). Called on the game thread right after the index
+// is built, so it never races the index (built when the game opens the RomFS, freed on reboot).
+static void romfs_each(int fd, void (*fn)(const char *path, int fd, uint64_t off, uint64_t size, void *u), void *u) {
+    for (int i = 0; i < rom_nfiles; i++) fn(rom_files[i].path, fd, rom_files[i].off, rom_files[i].size, u);
 }
 
 // ------------------------------------------------------------------ host-directory filesystem

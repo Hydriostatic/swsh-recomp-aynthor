@@ -2230,6 +2230,10 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
     return info;
 }
 
+// When this translator was built: its output may change with any edit, so work keyed by its output (the shader
+// preparation, nvn/vulkan/prep.c) is redone for another build.
+const char *maxwell_build_stamp(void) { return __DATE__ " " __TIME__; }
+
 void maxwell_free(ShaderInfo *s) {
     if (!s) return;
     free(s->msl);

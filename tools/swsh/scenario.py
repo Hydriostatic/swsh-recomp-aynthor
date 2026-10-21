@@ -118,6 +118,9 @@ def run_once(name, sc, args, run_dir):
         "LARECOMP_NO_LAUNCHER": "1", "LARECOMP_NO_USER_INPUT": "1",
         # the game lights its scenes by the time of day: every run starts at the same clock (20/10/2026 14:00 -03)
         "LARECOMP_FIXED_TIME": str(sc.get("fixed_time", 1792515600)),
+        # no shader preparation (runtime/nvn/vulkan/prep.c): minutes of background work that would compete with what a
+        # run measures; the "prep" scenario turns it on
+        "LARECOMP_SHADER_PREP": "0",
     })
     if sc.get("input"):
         env["LARECOMP_INPUT"] = scale_input(sc["input"], k)

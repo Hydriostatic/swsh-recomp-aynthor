@@ -77,6 +77,7 @@ void plat_thread_realtime(uint64_t period_ns) {
 long plat_written_pages(uint64_t addr, uint64_t size, uint64_t *out, long max) { (void)addr; (void)size; (void)out; (void)max; return -1; }
 
 void plat_thread_background(void) { setpriority(PRIO_PROCESS, (id_t)gettid(), 5); }
+void plat_thread_idle(void) { setpriority(PRIO_PROCESS, (id_t)gettid(), 19); }
 
 // ---- process
 // Started from a desktop (the AppImage) there is no terminal: stdout / stderr go to lasrecomp.log in the data folder

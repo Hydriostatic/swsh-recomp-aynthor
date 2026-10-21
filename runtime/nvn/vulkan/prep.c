@@ -1,0 +1,487 @@
+// Shader preparation: every shader stage of the game, compiled for this GPU ahead of the draws that need it.
+//
+// On a new install each shader and pipeline is compiled the first time a draw meets it, and the frame waits (9.9 s
+// of hitches in 68 s of play, docs/engineering/estudo-shaders-ports-switch.md). The game's shaders are all in its
+// files: BNSH containers (nn::gfx ResShaderFile), loose and inside the .gfpak packs (LZ4), effects (.ptcl) and .arc.
+// tools/swsh/shader_store.py measured that they hold 97.5% of the stages a real session draws with (the rest is made
+// at run time). The approach is OpenSmash's (nvn_vk_store.c / nvn_vk_prep, MIT; README: no holds in its first run
+// after the preparation): with VK_EXT_graphics_pipeline_library each stage becomes its own pipeline part, and the
+// part a draw builds from the same SPIR-V, set layout and state is a pipeline cache hit (exec.c vk_stage_layout,
+// vk_prep_part), so the draw only links (~0.01 ms) instead of waiting for the driver (20-120 ms, up to 2.5 s).
+//
+// When the game opens its RomFS (services/fs.c) the candidate files are listed; threads at idle priority then
+//  1. read them and collect every distinct stage (FNV-1a of the code block, the runtime's own id: exec.c
+//     stage_hash_rt) and every vertex + fragment pair of a variation;
+//  2. every vertex stage: translated with the keys a draw of this game uses (below), compiled to SPIR-V (the same
+//     disk cache the draws use) and its part built; then every fragment stage, keyed by the vertex outputs it may get
+//     (all of them, and those of each vertex stage a variation pairs it with: most fragment stages sit in variations
+//     of their own, and the game picks the vertex stage at run time);
+//  3. write the parts' pipeline cache and the ids of the parts done, so the next start skips them (the ids every 30 s
+//     too: a run closed early resumes where it stopped).
+// Draw-time keys the files don't say (vertex attribute types, integer targets / textures) take the defaults most
+// draws use (cache/pipeline_recipes: 3687 recorded pipelines); a draw with others builds its own, as before.
+// Work done is keyed by the translator build, the GPU and its driver: another build or driver prepares again.
+// LARECOMP_SHADER_PREP=0: off. =<n>: n threads (default: half the logical cores, at most 8). Needs the pipeline parts
+// (g_vk.gpl, on by default where supported). The log reports progress ([prep]). LARECOMP_SHADER_PREP_EXIT=1: quit when it is done (tests).
+#include <fcntl.h>
+#include <pthread.h>
+#include <SDL3/SDL_cpuinfo.h>
+#include <SDL3/SDL_timer.h>
+#include <stdatomic.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include "../../rt.h"
+#include "../../paths.h"
+#include "shaders.h"
+#include "vk.h"
+
+VkPipelineLayout vk_stage_layout(VkDescriptorSetLayout sl, int set);       // exec.c
+VkPipeline vk_prep_part(int fragment, VkShaderModule m, VkPipelineLayout layout);
+bool vk_shader_jobs_waiting(void);
+
+// ------------------------------------------------------------------ the files
+typedef struct { uint64_t off, size; } PrepFile;
+static PrepFile *g_files;
+static int g_nfiles, g_cap_files;
+static int g_fd = -1;
+static uint64_t g_bytes;
+
+static bool candidate(const char *path) {
+    const char *dot = strrchr(path, '.');
+    if (!dot) return false;
+    static const char *const ext[] = {".gfpak", ".ptcl", ".bnsh", ".bnsh_vsh", ".bnsh_fsh", ".arc"};
+    for (size_t i = 0; i < sizeof ext / sizeof ext[0]; i++)
+        if (!strcmp(dot, ext[i])) return true;
+    return false;
+}
+
+static void add_file(const char *path, int fd, uint64_t off, uint64_t size, void *u) {
+    (void)fd, (void)u;
+    if (!candidate(path) || !size || size > (512u << 20)) return;
+    if (g_nfiles == g_cap_files) {
+        g_cap_files = g_cap_files ? g_cap_files * 2 : 4096;
+        g_files = realloc(g_files, (size_t)g_cap_files * sizeof *g_files);
+    }
+    g_files[g_nfiles++] = (PrepFile){off, size};
+    g_bytes += size;
+}
+
+// ------------------------------------------------------------------ containers
+static uint16_t rd16(const uint8_t *p) { uint16_t v; memcpy(&v, p, 2); return v; }
+static uint32_t rd32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
+static uint64_t rd64(const uint8_t *p) { uint64_t v; memcpy(&v, p, 8); return v; }
+
+// LZ4 block format (every .gfpak entry of this game); false on a malformed block
+static bool lz4_block(const uint8_t *src, size_t n, uint8_t *dst, size_t cap) {
+    size_t i = 0, o = 0;
+    while (i < n) {
+        uint8_t t = src[i++];
+        size_t lit = t >> 4;
+        if (lit == 15) for (uint8_t b = 255; b == 255 && i < n;) lit += b = src[i++];
+        if (i + lit > n || o + lit > cap) return false;
+        memcpy(dst + o, src + i, lit);
+        i += lit, o += lit;
+        if (i >= n) break;  // (the last sequence has literals only)
+        if (i + 2 > n) return false;
+        size_t dist = src[i] | (size_t)src[i + 1] << 8, len = (t & 15) + 4;
+        i += 2;
+        if ((t & 15) == 15) for (uint8_t b = 255; b == 255 && i < n;) len += b = src[i++];
+        if (!dist || dist > o || o + len > cap) return false;
+        for (size_t k = 0; k < len; k++, o++) dst[o] = dst[o - dist];  // (overlapping copies repeat a pattern)
+    }
+    return o == cap;
+}
+
+static uint64_t fnv1a(const uint8_t *b, size_t n) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    for (size_t k = 0; k < n; k++) h = (h ^ b[k]) * 0x100000001B3ull;
+    return h ? h : 1;
+}
+
+// distinct stages, by id (the code's FNV-1a), and the pairs of a variation
+typedef struct { uint64_t h; uint8_t *code; uint32_t size, const_off; uint8_t stage, nmasks; uint32_t out_mask, masks[8]; } Stage;
+#define STAGE_CAP (1 << 16)
+static Stage g_stages[STAGE_CAP];
+static int g_nstages;
+typedef struct { uint64_t vs, fs; } Pair;
+static Pair *g_pairs;
+static int g_npairs, g_cap_pairs;
+static pthread_mutex_t g_scan_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static Stage *stage_find(uint64_t h, bool add) {  // (open addressing; under g_scan_lock while scanning)
+    uint32_t i = (uint32_t)(h ^ (h >> 29)) & (STAGE_CAP - 1);
+    for (int n = 0; n < STAGE_CAP; n++, i = (i + 1) & (STAGE_CAP - 1)) {
+        if (g_stages[i].h == h) return &g_stages[i];
+        if (!g_stages[i].h) {
+            if (!add || g_nstages >= STAGE_CAP * 3 / 4) return NULL;
+            g_stages[i].h = h;
+            g_nstages++;
+            return &g_stages[i];
+        }
+    }
+    return NULL;
+}
+
+static uint64_t note_stage(const uint8_t *code, uint32_t size, const uint8_t *ctrl, int stage) {
+    uint64_t h = fnv1a(code, size);
+    pthread_mutex_lock(&g_scan_lock);
+    Stage *s = stage_find(h, true);
+    if (s && !s->code) {
+        // (the translator may read up to the constants, or 64 KB without them, as it does from guest memory: zeros)
+        uint32_t co = rd32(ctrl + 0x700), max = co ? co : 0x10000;
+        s->code = calloc(1, (size_t)(size > max ? size : max) + 0x100);
+        memcpy(s->code, code, size);
+        s->size = size;
+        s->const_off = co;
+        s->stage = (uint8_t)stage;
+    }
+    pthread_mutex_unlock(&g_scan_lock);
+    return s ? h : 0;
+}
+
+// The BNSH at d[base:]: its variations' vertex and fragment stages (the layout: SuperMarioWonderRecomp
+// tools/maxwell/containers.py, MIT; every pointer is an offset from the container).
+static void scan_bnsh(const uint8_t *d, size_t n, size_t base) {
+    if (base + 0x20 > n) return;
+    uint32_t size = rd32(d + base + 0x1C);
+    uint16_t first = rd16(d + base + 0x16);
+    if (size <= 0x100 || size > n - base || base + first + 0x30 > n || memcmp(d + base + first, "grsc", 4)) return;
+    const uint8_t *b = d + base, *g = b + first;
+    uint32_t nvar = rd32(g + 0x1C);
+    uint64_t vars = rd64(g + 0x20);
+    for (uint32_t k = 0; k < nvar && vars + (uint64_t)(k + 1) * 0x40 <= size; k++) {
+        uint64_t prog = rd64(b + vars + k * 0x40 + 0x10);
+        if (!prog || prog + 0x40 > size) continue;
+        uint64_t ids[2] = {0, 0};
+        for (int s = 0; s < 5; s++) {  // ShaderStage order: vertex, hull, domain, geometry, pixel
+            if (s != 0 && s != 4) continue;
+            uint64_t sc = rd64(b + prog + 8 + s * 8);
+            if (!sc || sc + 0x20 > size) continue;
+            uint64_t ctrl = rd64(b + sc + 8), code = rd64(b + sc + 0x10);
+            uint32_t csz = rd32(b + sc + 0x18), ksz = rd32(b + sc + 0x1C);
+            if (ksz < 0x708 || ctrl + ksz > size || code + csz > size || rd32(b + ctrl) != 0x98761234 || rd32(b + code) != 0x12345678) continue;
+            uint32_t hsz = rd32(b + ctrl + 0x704);  // (what the runtime hashes: objects.c set_shaders)
+            if (!hsz || hsz > csz) hsz = csz;
+            ids[s == 4] = note_stage(b + code, hsz, b + ctrl, s == 4 ? STAGE_FRAGMENT : STAGE_VERTEX);
+        }
+        if (!ids[0]) continue;
+        pthread_mutex_lock(&g_scan_lock);
+        if (g_npairs == g_cap_pairs) {
+            g_cap_pairs = g_cap_pairs ? g_cap_pairs * 2 : 4096;
+            g_pairs = realloc(g_pairs, (size_t)g_cap_pairs * sizeof *g_pairs);
+        }
+        g_pairs[g_npairs++] = (Pair){ids[0], ids[1]};
+        pthread_mutex_unlock(&g_scan_lock);
+    }
+}
+
+static void scan_buffer(const uint8_t *d, size_t n) {  // (every "BNSH\0\0\0\0": memchr for the B, then the rest)
+    if (n < 8) return;
+    for (const uint8_t *p = d; (p = memchr(p, 'B', (size_t)(d + n - 7 - p))); p++)
+        if (!memcmp(p, "BNSH\0\0\0\0", 8)) scan_bnsh(d, n, (size_t)(p - d));
+}
+
+static void scan_file(const PrepFile *f) {
+    uint8_t *d = malloc(f->size);
+    if (!d || pread(g_fd, d, f->size, (off_t)f->off) != (ssize_t)f->size) { free(d); return; }
+    if (f->size >= 0x28 && !memcmp(d, "GFLXPACK", 8)) {
+        uint32_t nf = rd32(d + 0x10);
+        uint64_t fi = rd64(d + 0x18);
+        for (uint32_t i = 0; i < nf && fi + (uint64_t)(i + 1) * 24 <= f->size; i++) {
+            const uint8_t *e = d + fi + i * 24;  // level u16, compression u16, size, compressed size, pad, offset
+            uint16_t ct = rd16(e + 2);
+            uint32_t dsz = rd32(e + 4), csz = rd32(e + 8);
+            uint64_t off = rd64(e + 16);
+            if (off + csz > f->size || dsz > (256u << 20)) continue;
+            if (ct == 0) { scan_buffer(d + off, csz); continue; }
+            if (ct != 2) continue;  // (zlib / Oodle: not used by this game)
+            uint8_t *u = malloc(dsz);
+            if (u && lz4_block(d + off, csz, u, dsz)) scan_buffer(u, dsz);
+            free(u);
+        }
+    } else {
+        scan_buffer(d, f->size);
+    }
+    free(d);
+}
+
+// ------------------------------------------------------------------ parts done (cache/shader_prep.bin)
+// One u64 per part: the stage id mixed with its key; the file starts with the id of this translator build + GPU + driver.
+#define DONE_CAP (1 << 17)
+static uint64_t g_done[DONE_CAP];
+static int g_ndone;
+static uint64_t g_epoch;
+static pthread_mutex_t g_done_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t *g_new_done;
+static int g_nnew, g_cap_new;
+
+static bool done_has(uint64_t id, bool add) {  // (under g_done_lock)
+    uint32_t i = (uint32_t)(id ^ (id >> 31)) & (DONE_CAP - 1);
+    for (int n = 0; n < DONE_CAP; n++, i = (i + 1) & (DONE_CAP - 1)) {
+        if (g_done[i] == id) return true;
+        if (!g_done[i]) {
+            if (add && g_ndone < DONE_CAP * 3 / 4) { g_done[i] = id; g_ndone++; }
+            return false;
+        }
+    }
+    return false;
+}
+
+static void done_path(char *out, size_t n) { snprintf(out, n, "%s/shader_prep.bin", rt_cache_dir()); }
+
+static void done_load(void) {
+    const char *stamp = maxwell_build_stamp();
+    uint64_t h = fnv1a((const uint8_t *)stamp, strlen(stamp));
+    h = fnv1a((const uint8_t *)&g_vk.props.pipelineCacheUUID, VK_UUID_SIZE) ^ h * 31;
+    g_epoch = (h ^ g_vk.props.driverVersion * 0x9E3779B97F4A7C15ull ^ g_vk.props.deviceID) | 1;
+    char path[600];
+    done_path(path, sizeof path);
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    uint64_t e = 0, id;
+    if (fread(&e, 8, 1, f) == 1 && e == g_epoch)
+        while (fread(&id, 8, 1, f) == 1) done_has(id, true);
+    fclose(f);
+}
+
+static void done_save(void) {  // (append the new ids; a new epoch rewrites the file)
+    pthread_mutex_lock(&g_done_lock);
+    int n = g_nnew;
+    uint64_t *ids = g_new_done;
+    g_new_done = NULL, g_nnew = g_cap_new = 0;
+    pthread_mutex_unlock(&g_done_lock);
+    if (!n) { free(ids); return; }
+    char path[600];
+    done_path(path, sizeof path);
+    FILE *f = fopen(path, "rb");
+    uint64_t e = 0;
+    bool same = f && fread(&e, 8, 1, f) == 1 && e == g_epoch;
+    if (f) fclose(f);
+    mkdir(rt_cache_dir(), 0755);
+    f = fopen(path, same ? "ab" : "wb");
+    if (f) {
+        if (!same) fwrite(&g_epoch, 8, 1, f);
+        fwrite(ids, 8, (size_t)n, f);
+        fclose(f);
+    }
+    free(ids);
+}
+
+// true when this part still has to be built (and it is claimed)
+static bool claim(uint64_t id) {
+    pthread_mutex_lock(&g_done_lock);
+    bool had = done_has(id, true);
+    pthread_mutex_unlock(&g_done_lock);
+    return !had;
+}
+
+static void finished(uint64_t id) {
+    pthread_mutex_lock(&g_done_lock);
+    if (g_nnew == g_cap_new) {
+        g_cap_new = g_cap_new ? g_cap_new * 2 : 1024;
+        g_new_done = realloc(g_new_done, (size_t)g_cap_new * sizeof *g_new_done);
+    }
+    g_new_done[g_nnew++] = id;
+    pthread_mutex_unlock(&g_done_lock);
+}
+
+// ------------------------------------------------------------------ building
+static _Atomic int g_next_file;
+static _Atomic uint64_t stat_parts, stat_skipped, stat_failed, stat_part_ns;
+
+static void key_defaults(ShaderKey *k) {
+    memset(k, 0, sizeof *k);
+    k->glsl = 1;
+    k->flip_y = 1;           // (Sword: lower-left window origin and NVN's [-1, 1] depth in every recorded draw,
+    k->depth_minus_one = 1;  // exec.c draw_shader_keys)
+}
+
+// One stage: translated with these keys, compiled, and its part built. Returns the translation (for the vertex
+// stage's outputs), or NULL. done: the part was built before (only the translation is wanted).
+static ShaderInfo *build_stage(const Stage *s, const ShaderKey *key, bool want_info, uint64_t id) {
+    bool todo = claim(id);
+    if (!todo && !want_info) { atomic_fetch_add(&stat_skipped, 1); return NULL; }
+    maxwell_gmem_base = HEAP_BASE;  // (as exec.c translate_program)
+    maxwell_gmem_size = HEAP_MAX;
+    ShaderInfo *si = maxwell_translate(s->code, s->const_off ? s->const_off : 0x10000, s->stage, key);
+    if (!si || !si->msl) { atomic_fetch_add(&stat_failed, 1); if (todo) finished(id); maxwell_free(si); return NULL; }
+    if (getenv("LARECOMP_PREP_DEBUG")) {
+        uint64_t g = 0xcbf29ce484222325ull;
+        for (const char *q = si->msl; *q; q++) g = (g ^ (uint8_t)*q) * 0x100000001B3ull;
+        LOG("[prepdbg] prep %s %016llx glsl %016llx\n", s->stage == STAGE_FRAGMENT ? "fs" : "vs", (unsigned long long)s->h, (unsigned long long)g);
+    }
+    if (!todo) { atomic_fetch_add(&stat_skipped, 1); return si; }
+    uint64_t t0 = SDL_GetTicksNS();
+    size_t nw = 0;
+    uint32_t *spv = vk_glsl_to_spirv(si->msl, s->stage, s->stage == STAGE_VERTEX ? "vs" : "fs", &nw);
+    bool ok = false;
+    if (spv) {
+        VkBindingInfo binds[96];
+        int nb = vk_reflect(spv, nw, binds, 96);
+        int set = s->stage == STAGE_FRAGMENT;
+        VkDescriptorSetLayout sl = vk_set_layout(binds, nb, (uint32_t)set, set ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT);
+        VkPipelineLayout pl = vk_stage_layout(sl, set);
+        VkShaderModule m = vk_module(spv, nw);
+        VkPipeline part = m ? vk_prep_part(set, m, pl) : VK_NULL_HANDLE;
+        ok = part != VK_NULL_HANDLE;
+        if (part) vkDestroyPipeline(g_vk.dev, part, NULL);
+        if (m) vkDestroyShaderModule(g_vk.dev, m, NULL);
+        vkDestroyPipelineLayout(g_vk.dev, pl, NULL);
+        vkDestroyDescriptorSetLayout(g_vk.dev, sl, NULL);
+        free(spv);
+    }
+    atomic_fetch_add(&stat_part_ns, SDL_GetTicksNS() - t0);
+    atomic_fetch_add(ok ? &stat_parts : &stat_failed, 1);
+    finished(id);
+    if (!want_info) { maxwell_free(si); return NULL; }
+    return si;
+}
+
+static uint64_t key_id(uint64_t h, const ShaderKey *k) { return fnv1a((const uint8_t *)k, sizeof *k) ^ h * 0x100000001B3ull ^ g_epoch; }
+
+// Vertex attributes the game feeds as unsigned integers (the bone indices and weights' companions: locations 7, 8 and
+// 11 in the recorded draws; every other location is always a float). A vertex stage reading them gets them unsigned:
+// a combination per stage (8 at most) doubled the parts and the disk for draws that don't come (25141 parts, 7.4 GB).
+static const int INT_LOCS[] = {7, 8, 11};
+
+static void build_vertex(Stage *s) {
+    ShaderKey k;
+    key_defaults(&k);
+    for (int i = 0; i < 3; i++) k.attr_kind[INT_LOCS[i]] = 2;  // (the kind of a location the stage doesn't read is unused)
+    ShaderInfo *si = build_stage(s, &k, true, key_id(s->h, &k));
+    if (si) s->out_mask = si->out_mask;  // (the fragment stages it pairs with are keyed by it)
+    maxwell_free(si);
+}
+
+// A fragment stage reads only some of the vertex outputs, and its translation depends on nothing else of the vertex
+// stage (an input the vertex stage doesn't write reads 0): built with every output there (most programs), and once
+// more for each pairing in the files' variations that leaves some of its inputs out.
+static void build_fragment(Stage *s) {
+    ShaderKey k;
+    key_defaults(&k);
+    k.depth_minus_one = 0;  // (draw_shader_keys sets it on the vertex key only)
+    k.vs_out_mask = ~0u;
+    ShaderInfo *si = build_stage(s, &k, s->nmasks > 0, key_id(s->h, &k));
+    uint32_t in = si ? si->attr_mask : 0, seen[8];
+    int nseen = 0;
+    maxwell_free(si);
+    for (int i = 0; i < s->nmasks && in; i++) {
+        uint32_t m = s->masks[i] & in;
+        bool dup = m == in;
+        for (int j = 0; j < nseen && !dup; j++) dup = seen[j] == m;
+        if (dup) continue;
+        seen[nseen++] = m;
+        k.vs_out_mask = m;  // (the bits it doesn't read don't change it: as a draw with that vertex stage keys it)
+        maxwell_free(build_stage(s, &k, false, key_id(s->h, &k)));
+    }
+}
+
+static _Atomic int g_next_stage;
+static int g_phase_stage;  // STAGE_VERTEX, then STAGE_FRAGMENT
+
+static void *prep_thread(void *a) {
+    (void)a;
+    plat_thread_idle();
+    if (g_phase_stage < 0) {  // (scan)
+        int nf;
+        while ((nf = atomic_fetch_add(&g_next_file, 1)) < g_nfiles) scan_file(&g_files[nf]);
+        return NULL;
+    }
+    int i;
+    while ((i = atomic_fetch_add(&g_next_stage, 1)) < STAGE_CAP) {
+        Stage *s = &g_stages[i];
+        if (!s->code || s->stage != g_phase_stage) continue;
+        while (vk_shader_jobs_waiting()) SDL_DelayNS(2 * 1000000ull);  // (a draw's own builds go first)
+        if (s->stage == STAGE_VERTEX) build_vertex(s); else build_fragment(s);
+    }
+    return NULL;
+}
+
+static _Atomic int g_live;
+
+static void *phase_thread(void *a) {
+    prep_thread(a);
+    atomic_fetch_sub(&g_live, 1);
+    return NULL;
+}
+
+// Runs one phase on n threads. Every 30 s the ids of the parts built so far are written: a run closed before the end
+// keeps them (the parts themselves are in the driver's own cache, and vk_parts.bin is written at exit).
+static void run_phase(int phase, int n) {
+    g_phase_stage = phase;
+    atomic_store(&g_next_stage, 0);
+    atomic_store(&g_live, n);
+    pthread_t t[64];
+    for (int k = 0; k < n; k++) pthread_create(&t[k], NULL, phase_thread, NULL);
+    uint64_t last = SDL_GetTicksNS();
+    while (atomic_load(&g_live)) {
+        SDL_DelayNS(200 * 1000000ull);
+        if (phase >= 0 && SDL_GetTicksNS() - last > 30 * 1000000000ull) { last = SDL_GetTicksNS(); done_save(); }
+    }
+    for (int k = 0; k < n; k++) pthread_join(t[k], NULL);
+}
+
+static void log_progress(const char *what, uint64_t t0) {
+    LOG("[prep] %s: %llu parts built (%.0f ms of driver time), %llu done before, %llu failed, %.0f s\n", what,
+        (unsigned long long)atomic_load(&stat_parts), atomic_load(&stat_part_ns) / 1e6, (unsigned long long)atomic_load(&stat_skipped),
+        (unsigned long long)atomic_load(&stat_failed), (SDL_GetTicksNS() - t0) / 1e9);
+}
+
+static void *prep_main(void *a) {
+    (void)a;
+    plat_thread_idle();
+    while (!g_vk.dev || !g_vk.pcache) SDL_DelayNS(50 * 1000000ull);
+    if (!g_vk.gpl) { LOG("[prep] off: needs the pipeline parts (LARECOMP_GPL=0, or not supported)\n"); return NULL; }
+    done_load();
+    int n = SDL_GetNumLogicalCPUCores() / 2;
+    const char *e = getenv("LARECOMP_SHADER_PREP");
+    if (e && atoi(e) > 0) n = atoi(e);
+    if (n < 1) n = 1;
+    if (n > 8 && !(e && atoi(e) > 0)) n = 8;
+    if (n > 64) n = 64;
+    uint64_t t0 = SDL_GetTicksNS();
+    LOG("[prep] %d files (%.0f MB) to scan for shaders, %d threads, %d parts done before\n", g_nfiles, g_bytes / 1e6, n, g_ndone);
+    run_phase(-1, n);
+    LOG("[prep] scanned in %.1f s: %d distinct stages, %d vertex + fragment pairs\n", (SDL_GetTicksNS() - t0) / 1e9, g_nstages, g_npairs);
+    run_phase(STAGE_VERTEX, n);
+    log_progress("vertex stages", t0);
+    for (int i = 0; i < g_npairs; i++) {  // (each fragment stage: the outputs of the vertex stages it is paired with)
+        Stage *v = stage_find(g_pairs[i].vs, false), *f = g_pairs[i].fs ? stage_find(g_pairs[i].fs, false) : NULL;
+        if (!v || !f || !v->out_mask || v->out_mask == ~0u) continue;
+        bool have = false;
+        for (int k = 0; k < f->nmasks && !have; k++) have = f->masks[k] == v->out_mask;
+        if (!have && f->nmasks < 8) f->masks[f->nmasks++] = v->out_mask;
+    }
+    run_phase(STAGE_FRAGMENT, n);
+    log_progress("fragment stages", t0);
+    // The parts' cache (once: a save blocks every pipeline created meanwhile, device.c), then the last ids.
+    uint64_t ts = SDL_GetTicksNS();
+    vk_parts_cache_save();
+    done_save();
+    LOG("[prep] done in %.0f s (cache written in %.1f s)\n", (SDL_GetTicksNS() - t0) / 1e9, (SDL_GetTicksNS() - ts) / 1e9);
+    if (getenv("LARECOMP_SHADER_PREP_EXIT")) {  // (tests: a first start that only prepares, then a run that plays)
+        LOG("[prep] finished: exit\n");
+        fflush(stderr);
+        _exit(0);
+    }
+    for (int k = 0; k < STAGE_CAP; k++) { free(g_stages[k].code); g_stages[k].code = NULL; }
+    free(g_files), g_files = NULL;
+    free(g_pairs), g_pairs = NULL;
+    return NULL;
+}
+
+void shader_prep_romfs(int fd, void (*each)(int, void (*)(const char *, int, uint64_t, uint64_t, void *), void *)) {
+    static bool started;
+    const char *e = getenv("LARECOMP_SHADER_PREP");
+    if (started || (e && !strcmp(e, "0"))) return;
+    started = true;
+    each(fd, add_file, NULL);
+    if (!g_nfiles) return;
+    g_fd = dup(fd);  // (the fs service closes its own on a reboot)
+    pthread_t t;
+    pthread_create(&t, NULL, prep_main, NULL);
+    pthread_detach(t);
+}

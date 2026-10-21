@@ -39,6 +39,7 @@ uint64_t plat_now_ns(void);                // monotonic
 void plat_sleep_until_ns(uint64_t t);      // precise wait for plat_now_ns() >= t
 void plat_thread_realtime(uint64_t period_ns);  // periodic timing thread (vsync): don't coalesce its timers
 void plat_thread_background(void);              // background work (shader builds): below the game and render threads
+void plat_thread_idle(void);                    // work that may wait (shader preparation): runs only when the CPU is idle
 #ifdef _WIN32
 // A guest thread's precise wait (kernel.c kwait): an auto-reset event its wakers set, and a high-resolution timer for the
 // timeout. MinGW's pthread_cond_timedwait / nanosleep round short waits up to the 15.6 ms system tick on Windows even
