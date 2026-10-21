@@ -380,6 +380,9 @@ static void build_fragment(Stage *s) {
 }
 
 static _Atomic int g_next_stage;
+// progress, for the notice on screen (shader_prep_progress): files scanned, stages built, and when it ended
+static _Atomic int g_files_done, g_stages_done, g_running;
+static _Atomic uint64_t g_end_ns;
 static int g_phase_stage;  // STAGE_VERTEX, then STAGE_FRAGMENT
 
 static void *prep_thread(void *a) {
@@ -387,7 +390,7 @@ static void *prep_thread(void *a) {
     plat_thread_idle();
     if (g_phase_stage < 0) {  // (scan)
         int nf;
-        while ((nf = atomic_fetch_add(&g_next_file, 1)) < g_nfiles) scan_file(&g_files[nf]);
+        while ((nf = atomic_fetch_add(&g_next_file, 1)) < g_nfiles) { scan_file(&g_files[nf]); atomic_fetch_add(&g_files_done, 1); }
         return NULL;
     }
     int i;
@@ -396,6 +399,7 @@ static void *prep_thread(void *a) {
         if (!s->code || s->stage != g_phase_stage) continue;
         while (vk_shader_jobs_waiting()) SDL_DelayNS(2 * 1000000ull);  // (a draw's own builds go first)
         if (s->stage == STAGE_VERTEX) build_vertex(s); else build_fragment(s);
+        atomic_fetch_add(&g_stages_done, 1);
     }
     return NULL;
 }
@@ -444,6 +448,7 @@ static void *prep_main(void *a) {
     if (n > 64) n = 64;
     uint64_t t0 = SDL_GetTicksNS();
     LOG("[prep] %d files (%.0f MB) to scan for shaders, %d threads, %d parts done before\n", g_nfiles, g_bytes / 1e6, n, g_ndone);
+    atomic_store(&g_running, 1);
     run_phase(-1, n);
     LOG("[prep] scanned in %.1f s: %d distinct stages, %d vertex + fragment pairs\n", (SDL_GetTicksNS() - t0) / 1e9, g_nstages, g_npairs);
     run_phase(STAGE_VERTEX, n);
@@ -461,6 +466,8 @@ static void *prep_main(void *a) {
     uint64_t ts = SDL_GetTicksNS();
     vk_parts_cache_save();
     done_save();
+    atomic_store(&g_end_ns, SDL_GetTicksNS());
+    atomic_store(&g_running, 0);
     LOG("[prep] done in %.0f s (cache written in %.1f s)\n", (SDL_GetTicksNS() - t0) / 1e9, (SDL_GetTicksNS() - ts) / 1e9);
     if (getenv("LARECOMP_SHADER_PREP_EXIT")) {  // (tests: a first start that only prepares, then a run that plays)
         LOG("[prep] finished: exit\n");
@@ -471,6 +478,20 @@ static void *prep_main(void *a) {
     free(g_files), g_files = NULL;
     free(g_pairs), g_pairs = NULL;
     return NULL;
+}
+
+// For the notice on screen (ui/menu.mm): 1 while preparing (*frac: 0..1; the scan counts as the first 10%), 2 for a few
+// seconds after it ended, 0 otherwise. A start with everything done before ends in about a minute (scan + translation).
+int shader_prep_progress(float *frac) {
+    if (atomic_load(&g_running)) {
+        float scan = g_nfiles ? (float)atomic_load(&g_files_done) / (float)g_nfiles : 0;
+        float build = g_nstages && scan >= 1 ? (float)atomic_load(&g_stages_done) / (float)g_nstages : 0;
+        *frac = 0.1f * scan + 0.9f * (build > 1 ? 1 : build);
+        return 1;
+    }
+    uint64_t end = atomic_load(&g_end_ns);
+    if (end && SDL_GetTicksNS() - end < 6 * 1000000000ull) { *frac = 1; return 2; }
+    return 0;
 }
 
 void shader_prep_romfs(int fd, void (*each)(int, void (*)(const char *, int, uint64_t, uint64_t, void *), void *)) {

@@ -36,7 +36,8 @@ the cycle reports.
   effect files: 97.5% of what a session draws with) is compiled in the background into its own pipeline part
   (graphics pipeline library, now on by default), so a first visit links instead of compiling. As a new install: a
   wild battle went from 50 frames over 50 ms to 9-12, a town's entry from 3.5-4 s of hitches to 2.2 s (the game's own
-  loads). About 5 minutes on 8 threads and 2 GB of disk; shaders on disk are compressed (zstd).
+  loads). About 5 minutes on 8 threads (a notice in a corner of the screen shows the progress) and 2 GB of disk;
+  shaders on disk are compressed (zstd).
 
 ### Tools (for developers)
 - A scenario harness with saved positions, regression checks and a supervisor (`tools/swsh/`, `tools/agent/`), a

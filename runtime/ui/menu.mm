@@ -416,11 +416,34 @@ static void quit_draw(ImGuiIO &io, float scale) {
     ImGui::End();
 }
 
+extern "C" int shader_prep_progress(float *frac);  // nvn/vulkan/prep.c
+
+// The shader preparation's notice (a corner of the screen, no input): progress while the game's shaders are prepared
+// for this GPU on the first start, then "ready" for a few seconds.
+static void prep_draw(ImGuiIO &io, float scale, int state, float frac) {
+    ImGui::SetNextWindowPos(ImVec2(16 * scale, io.DisplaySize.y - 16 * scale), 0, ImVec2(0, 1));
+    ImGui::SetNextWindowBgAlpha(0.55f);
+    ImGui::Begin("##prep", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                                     ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
+    if (state == 1) {
+        ImGui::Text(M("Preparing shaders: %d%%", "Preparando shaders: %d%%", "Подготовка шейдеров: %d%%"), (int)(frac * 100));
+        ImGui::ProgressBar(frac, ImVec2(260 * scale, 6 * scale), "");
+        ImGui::TextDisabled("%s", M("Only on the first start. The game may run slower meanwhile.",
+                                    "Só na primeira vez. O jogo pode ficar mais lento enquanto isso.",
+                                    "Только при первом запуске. Пока игра может работать медленнее."));
+    } else {
+        ImGui::TextUnformatted(M("Shaders ready", "Shaders prontos", "Шейдеры готовы"));
+    }
+    ImGui::End();
+}
+
 void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
     bool open = g_open.load(), kbd = g_kbd.load() == 1;
     float fx, fy;
     bool fdown, finger = !open && input_finger_cursor(&fx, &fy, &fdown);
-    if (!open && !kbd && !g_settings.show_fps && !finger) {
+    float prep_frac = 0;
+    int prep = shader_prep_progress(&prep_frac);
+    if (!open && !kbd && !g_settings.show_fps && !finger && !prep) {
         if (g_inited) { pthread_mutex_lock(&q_lock); q_events.clear(); pthread_mutex_unlock(&q_lock); }
         return;
     }
@@ -463,6 +486,7 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
         dl->AddCircleFilled(ImVec2(fx, fy), r, fdown ? IM_COL32(255, 255, 255, 170) : IM_COL32(255, 255, 255, 60));
         dl->AddCircle(ImVec2(fx, fy), r, IM_COL32(255, 255, 255, 235), 0, 4 * scale);
     }
+    if (prep) prep_draw(io, scale, prep, prep_frac);
     if (open) quit_draw(io, scale);
     if (kbd) keyboard_draw(io, scale);
     ImGui::Render();
