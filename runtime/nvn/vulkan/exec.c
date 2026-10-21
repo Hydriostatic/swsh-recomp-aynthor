@@ -1020,15 +1020,51 @@ static void queue_job(void (*fn)(void *), void *arg, bool low) {
 }
 static void run_job(void (*fn)(void *), void *arg) { queue_job(fn, arg, false); }
 static void run_job_low(void (*fn)(void *), void *arg) { queue_job(fn, arg, true); }
+
+// Whole pipelines, when draws use the ones linked from parts (g_vk.gpl): two threads at idle priority. On the workers
+// they took the CPU and the workers from the links and translations a new area needs at once (a town: 16 s of driver
+// time queued in the same 2 s as 205 parts). They replace the linked pipeline whenever they are ready.
+static Job *bg_head, *bg_tail;
+static pthread_cond_t bg_cond = PTHREAD_COND_INITIALIZER;
+static void *bg_worker(void *a) {
+    (void)a;
+    plat_thread_idle();
+    for (;;) {
+        pthread_mutex_lock(&jobs_lock);
+        while (!bg_head) pthread_cond_wait(&bg_cond, &jobs_lock);
+        Job *j = bg_head;
+        bg_head = j->next;
+        if (!bg_head) bg_tail = NULL;
+        pthread_mutex_unlock(&jobs_lock);
+        j->fn(j->arg);
+        free(j);
+    }
+    return NULL;
+}
+static void run_job_bg(void (*fn)(void *), void *arg) {
+    if (sync_shaders()) { fn(arg); return; }
+    static bool started;
+    pthread_mutex_lock(&jobs_lock);
+    if (!started) {
+        started = true;
+        for (int i = 0; i < 2; i++) { pthread_t t; pthread_create(&t, NULL, bg_worker, NULL); }
+    }
+    Job *j = malloc(sizeof *j);
+    j->fn = fn; j->arg = arg; j->next = NULL;
+    if (bg_tail) bg_tail->next = j; else bg_head = j;
+    bg_tail = j;
+    pthread_cond_signal(&bg_cond);
+    pthread_mutex_unlock(&jobs_lock);
+}
 bool vk_shader_jobs_waiting(void) { return __atomic_load_n(&jobs_head, __ATOMIC_RELAXED) != NULL; }  // (prep.c yields to them)
 static bool wait_built(_Atomic int *state, void (*fn)(void *), void *arg);  // (draws and dispatches: below)
 
-// Takes the job (fn, arg) out of either queue if no worker has started it: the caller then runs it itself.
+// Takes the job (fn, arg) out of any queue if no worker has started it: the caller then runs it itself.
 static bool job_claim(void (*fn)(void *), void *arg) {
     bool found = false;
     pthread_mutex_lock(&jobs_lock);
-    for (int q = 0; q < 2 && !found; q++) {
-        Job **head = q ? &low_head : &jobs_head, **tail = q ? &low_tail : &jobs_tail, *prev = NULL;
+    for (int q = 0; q < 3 && !found; q++) {
+        Job **head = q == 2 ? &bg_head : q ? &low_head : &jobs_head, **tail = q == 2 ? &bg_tail : q ? &low_tail : &jobs_tail, *prev = NULL;
         for (Job *j = *head; j; prev = j, j = j->next) {
             if (j->fn != fn || j->arg != arg) continue;
             if (prev) prev->next = j->next; else *head = j->next;
@@ -2252,7 +2288,9 @@ typedef struct {
     uint32_t write_mask[8];
 } PipeKey;
 
-typedef struct { PipeKey k; uint64_t hash; VkPipeline pipe, fast; _Atomic int state; bool prewarmed, drawn; } Pipe;  // state: 0 building, 1 ready, 2 failed (fast: linked from parts, below)
+// state: 0 building, 1 ready, 2 failed. fast: linked from parts (below); fstate: the same for it, -1 not asked for
+typedef struct { PipeKey k; uint64_t hash; VkPipeline pipe, fast; _Atomic int state, fstate; bool prewarmed, drawn; } Pipe;
+static void link_pipeline(void *arg);
 #define PIPE_TAB 8192
 static struct { uint64_t key; Pipe *pipe; } pipe_tab[PIPE_TAB];
 
@@ -2651,6 +2689,12 @@ static VkPipeline gpl_link(const PipeKey *k) {
     atomic_fetch_add(&stat_gpl_links, 1);
     if (r != VK_SUCCESS) { atomic_fetch_add(&stat_gpl_failed, 1); return VK_NULL_HANDLE; }
     return p;
+}
+
+static void link_pipeline(void *arg) {  // (a worker, or the draw that needs it first)
+    Pipe *pp = arg;
+    pp->fast = gpl_link(&pp->k);
+    atomic_store(&pp->fstate, pp->fast ? 1 : 2);
 }
 
 // The vertex (pre-rasterization) or fragment part of one stage, as a draw builds it with the most common state of this
@@ -3553,7 +3597,13 @@ static Pipe *pipe_get(const PipeKey *k, bool prewarm, bool *created) {
         pp->prewarmed = prewarm;
         pipe_tab[pslot].key = ph;
         pipe_tab[pslot].pipe = pp;
-        if (prewarm || g_vk.gpl) run_job_low(build_pipeline, pp);  // (with parts a draw links its own meanwhile)
+        // With parts the pipeline a draw uses is linked from them, on a worker as soon as the pipeline is known (a
+        // draw, or the prefetch walk of its list: linked in parallel, not one after another on this thread), and the
+        // whole one follows in the background. A recipe's pipeline is linked only if a draw needs it before then.
+        atomic_store(&pp->fstate, g_vk.gpl && !prewarm ? 0 : -1);
+        if (g_vk.gpl && !prewarm) run_job(link_pipeline, pp);
+        if (g_vk.gpl) run_job_bg(build_pipeline, pp);
+        else if (prewarm) run_job_low(build_pipeline, pp);
         else run_job(build_pipeline, pp);
     }
     return pp;
@@ -4031,8 +4081,10 @@ static void draw_(CmdRec *r, bool indexed) {
     if (atomic_load(&pp->state) == 0) pf_rest_of_list();  // (about to wait: find the rest of the list's needs first)
     VkPipeline use = VK_NULL_HANDLE;
     if (g_vk.gpl && atomic_load(&pp->state) != 1) {  // (whole pipeline not ready: the one linked from parts)
-        if (!pp->fast) pp->fast = gpl_link(&pp->k);
-        if (pp->fast) { use = pp->fast; atomic_fetch_add(&stat_gpl_used, 1); }
+        int none = -1;
+        if (atomic_compare_exchange_strong(&pp->fstate, &none, 0)) link_pipeline(pp);
+        else wait_built(&pp->fstate, link_pipeline, pp);
+        if (atomic_load(&pp->fstate) == 1) { use = pp->fast; atomic_fetch_add(&stat_gpl_used, 1); }
     }
     if (!use) {
         wait_built(&pp->state, build_pipeline, pp);

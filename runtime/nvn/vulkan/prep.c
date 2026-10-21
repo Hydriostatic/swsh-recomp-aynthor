@@ -232,6 +232,29 @@ static bool done_has(uint64_t id, bool add) {  // (under g_done_lock)
 
 static void done_path(char *out, size_t n) { snprintf(out, n, "%s/shader_prep.bin", rt_cache_dir()); }
 
+// cache/shader_prep_complete: one u64, this build + GPU + driver (g_epoch) mixed with the files scanned. A start that
+// finds it skips the preparation; without it every start read and translated all 18k stages again (38 s of CPU) to
+// learn that every part was done.
+static uint64_t complete_id(void) { return (g_epoch ^ (uint64_t)g_nfiles * 0x9E3779B97F4A7C15ull ^ g_bytes * 31) | 1; }
+
+static bool complete_check(void) {
+    char path[600];
+    snprintf(path, sizeof path, "%s/shader_prep_complete", rt_cache_dir());
+    FILE *f = fopen(path, "rb");
+    uint64_t v = 0;
+    bool ok = f && fread(&v, 8, 1, f) == 1 && v == complete_id();
+    if (f) fclose(f);
+    return ok;
+}
+
+static void complete_write(void) {
+    char path[600];
+    snprintf(path, sizeof path, "%s/shader_prep_complete", rt_cache_dir());
+    FILE *f = fopen(path, "wb");
+    uint64_t v = complete_id();
+    if (f) { fwrite(&v, 8, 1, f); fclose(f); }
+}
+
 static void done_load(void) {
     const char *stamp = maxwell_build_stamp();
     uint64_t h = fnv1a((const uint8_t *)stamp, strlen(stamp));
@@ -440,6 +463,10 @@ static void *prep_main(void *a) {
     while (!g_vk.dev || !g_vk.pcache) SDL_DelayNS(50 * 1000000ull);
     if (!g_vk.gpl) { LOG("[prep] off: needs the pipeline parts (LARECOMP_GPL=0, or not supported)\n"); return NULL; }
     done_load();
+    if (complete_check()) {
+        LOG("[prep] already done for this build, GPU and driver\n");
+        return NULL;
+    }
     int n = SDL_GetNumLogicalCPUCores() / 2;
     const char *e = getenv("LARECOMP_SHADER_PREP");
     if (e && atoi(e) > 0) n = atoi(e);
@@ -466,6 +493,7 @@ static void *prep_main(void *a) {
     uint64_t ts = SDL_GetTicksNS();
     vk_parts_cache_save();
     done_save();
+    complete_write();
     atomic_store(&g_end_ns, SDL_GetTicksNS());
     atomic_store(&g_running, 0);
     LOG("[prep] done in %.0f s (cache written in %.1f s)\n", (SDL_GetTicksNS() - t0) / 1e9, (SDL_GetTicksNS() - ts) / 1e9);

@@ -79,3 +79,10 @@ Custo esperado (referência OpenSmash): minutos de preparação na primeira exec
   variantes por estágio de vértice davam 7,4 GB e travadas de 16 s no boot.
 - Falta: a etapa 5 (fluxo de controle estruturado no tradutor); o DLC fora do RomFS principal (`aoc/*.bin`) ainda não
   é lido pela preparação; um aviso de progresso na tela.
+- **Depois do primeiro teste no jogo** (log de 8 min do usuário: 98 quadros > 50 ms, 14,4 s): as partes acertavam o
+  cache (~1-5 ms cada), mas eram criadas e ligadas uma a uma na render thread (205 partes, ~1 s seguido numa área
+  nova), e os pipelines inteiros disputavam os workers e a CPU (16 s de driver no mesmo momento). Agora a ligação é um
+  trabalho dos workers pedido assim que o pipeline é conhecido (draw ou pré-varredura), e os pipelines inteiros vão
+  para 2 threads em prioridade ociosa. Mesma cache preparada: cidade 2,2 → 0,86 s (pior quadro 1.423 → 664 ms), mundo
+  aberto 1,5 → 1,05 s, batalha 2,1-2,5 → 2,0 s (pior 731 → 522 ms; os 522 ms são o carregamento da batalha). E uma
+  preparação concluída não roda de novo (`shader_prep_complete`): antes, toda abertura relia e retraduzia tudo (38 s).
