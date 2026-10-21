@@ -2028,9 +2028,30 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
             if (t >= 0 && (size_t)(t / 8) < end) label[t / 8] = 1;
             any_branch = true;
         }
-        if ((w & 0xfff0000000000000ull) == 0xe250000000000000ull) {  // BRX: any instruction may be a target
+        if ((w & 0xfff0000000000000ull) == 0xe250000000000000ull) {  // BRX: computed target
             any_branch = true;
-            memset(label, 1, end);
+            // The NVN compiler's switch: index clamped, target read from a constant-buffer table, BRX inside an SSY
+            // (cases end with SYNC) or a PBK (cases end with BRK) whose target closes the case bodies laid out right
+            // after it. The targets are then the instructions between the BRX and that point. Labelling every
+            // instruction instead (a case label on each: 485 in one town shader) made the driver take 0.3-1.3 s to
+            // compile such a shader. A target missed
+            // here ends the shader at the dispatch switch's default (a wrong pixel, never a hang). Without an enclosing
+            // SSY / PBK (or LARECOMP_BRX_ALL=1), every instruction stays a possible target.
+            static int all = -1;
+            if (all < 0) all = getenv("LARECOMP_BRX_ALL") && atoi(getenv("LARECOMP_BRX_ALL"));
+            size_t region_end = 0;
+            for (size_t j = i; j-- > 0 && i - j < 512 && !all;) {
+                if (j % 4 == 0) continue;
+                uint64_t wj = ((const uint64_t *)code)[j];
+                if ((wj & 0xfff0000000000020ull) == 0xe290000000000000ull ||
+                    (wj & 0xfff0000000000020ull) == 0xe2a0000000000000ull) {  // SSY / PBK
+                    int64_t t = norm_target((int64_t)j * 8 + 8 + sbits(wj, 20, 24));
+                    if (t > (int64_t)pc && (size_t)(t / 8) < end) region_end = (size_t)(t / 8);
+                    break;
+                }
+            }
+            if (region_end) for (size_t k = i + 1; k <= region_end; k++) label[k] = 1;
+            else memset(label, 1, end);
         }
         if ((w & 0xfff8000000000000ull) == 0xf0f8000000000000ull || (w & 0xfff0000000000000ull) == 0xe340000000000000ull ||
             (w & 0xfff0000000000000ull) == 0xe350000000000000ull)
