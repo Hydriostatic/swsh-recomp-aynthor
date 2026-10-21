@@ -1,7 +1,7 @@
 # Progresso
 
 Estado atual do port. A história completa, com cada problema e como foi resolvido, está em
-[HISTORICO.md](HISTORICO.md). As ferramentas de diagnóstico estão em [DEPURACAO.md](DEPURACAO.md).
+[HISTORICO.md](../HISTORICO.md). As ferramentas de diagnóstico estão em [DEPURACAO.md](../DEPURACAO.md).
 O backlog priorizado para uma versão madura está em [ROADMAP.md](ROADMAP.md).
 
 _Atualizado em 17/10/2026._
@@ -28,7 +28,7 @@ _Atualizado em 17/10/2026._
 
 ## O que falta
 1. **Validar o 3D em mais cenas** (batalhas, Pokémon grandes, cidades): a correção dos modelos com esqueleto foi
-   validada na Pallet Town. Histórico em [HISTORICO.md, parte 6](HISTORICO.md#parte-6-personagens-explodidos-resolvido).
+   validada na Pallet Town. Histórico em [HISTORICO.md, parte 6](../HISTORICO.md#parte-6-personagens-explodidos-resolvido).
 2. **Mira por movimento**: mouse (giroscópio virtual) e giroscópio real do controle (SDL, escrito em 16/10/2026 e guardado fora do `main`
    no `git stash` "giroscopio do controle"; **não testado com um controle de verdade**: sentido dos eixos a confirmar; `LARECOMP_GYRO_PAD_FLIP=1|2|3` inverte
    yaw/pitch). Sensibilidades no launcher. Falta: correção de deriva do pitch pelo acelerômetro.
@@ -41,7 +41,7 @@ _Atualizado em 17/10/2026._
    sumir: zero draws pulados depois do carregamento. A tradução de shaders roda em paralelo: mesmo na primeira visita
    (cache vazio) a área aparece completa depois do carregamento. Qualidade: SMAA ligado, filtro anisotrópico 16x e supersampling bem
    reduzido (1440p / 4K no launcher numa tela menor; 4K roda a ~78 fps sem limite numa RTX 3080). Detalhes em
-   [HISTORICO.md, parte 8](HISTORICO.md).
+   [HISTORICO.md, parte 8](../HISTORICO.md).
    Auditoria de 17/10: a resolução dinâmica tratava 30 fps estáveis como lentidão de 60 Hz; o orçamento foi corrigido
    para 30/60 conforme a cena. Teste isolado e Eevee roteirizado em 30/60 (refeito com ini LF: antes descia a 0,60, agora fica em 0,95-1,00) passaram; a opção só existe no ini (`resolution = dynamic`); coleta opcional de frametimes dá
    média e P95/P99 ([performance-analysis.md](performance-analysis.md)). Ainda faltam Pikachu, transições e profiling de CPU/GPU.
@@ -49,7 +49,7 @@ _Atualizado em 17/10/2026._
    acima não se repetiu nesta rota); duas causas achadas e corrigidas: espera por mutex no kernel emulado (HISTORICO 57: o
    60 fps pacado passou de 58,8-59,3 para 60,0 fps) e leitura de vértices pela GPU via PCIe (HISTORICO 58: GPU de ~10 para
    ~1,2 ms por quadro, fps sem limite ~75 -> ~90). O limite agora é a cadeia de CPU entre as 3 threads do jogo
-   ([PESQUISA-GPU.md](PESQUISA-GPU.md)). Sem teste em GPU mais fraca nem em placa integrada.
+   ([PESQUISA-GPU.md](../PESQUISA-GPU.md)). Sem teste em GPU mais fraca nem em placa integrada.
 5. **60 fps (experimental, opção "60 fps (experimental)" no launcher, desligada por padrão; `fps = 60` no larecomp.ini ou `LARECOMP_FPS60=1`)**: mundo a 60 nativo, menus e Pokédex a 30 com quadro intermediário, batalhas e capturas a 30 (HISTORICO 43-49). Histórico da investigação: a lógica do jogo anda um passo por quadro. Com `LARECOMP_FPS=60` ele chega ao mesmo estado
    no mesmo número de quadro em metade do tempo, ou seja, roda em velocidade dobrada (medido em 15/10/2026 com
    `tools/repro.sh`). 60 fps exigiria mudar o passo de tempo do próprio jogo. O que já se sabe:

@@ -4,7 +4,7 @@ Este documento conta, em ordem, como o port do **Pokémon Let's Go Eevee** saiu 
 (começar um jogo novo, capturar o Pikachu, salvar e carregar). Cada problema aparece com o **sintoma** (o que se via),
 o **diagnóstico** (como a causa foi encontrada), a **causa** e a **correção**, com os arquivos alterados.
 
-Período: 14 e 15/10/2026. Estado atual e pendências: [PROGRESSO.md](PROGRESSO.md). Ferramentas de diagnóstico:
+Período: 14 e 15/10/2026. Estado atual e pendências: [PROGRESSO.md](letsgo/PROGRESSO.md). Ferramentas de diagnóstico:
 [DEPURACAO.md](DEPURACAO.md).
 
 ---
@@ -20,7 +20,7 @@ Rodar o jogo do Switch **nativamente no PC**, sem emulador, usando **recompilaç
 - O [LASRecomp](https://github.com/peiikai/LASRecomp) (Link's Awakening, Switch, licença MIT) já tinha provado que
   o caminho funciona no Switch: tradutor ARM64 → C, kernel/serviços do Horizon e a API gráfica **NVN** traduzida
   para Vulkan.
-- A análise ([ANALISE-LASRecomp.md](ANALISE-LASRecomp.md)) mostrou que o núcleo é genérico e que o específico do
+- A análise ([ANALISE-LASRecomp.md](letsgo/ANALISE-LASRecomp.md)) mostrou que o núcleo é genérico e que o específico do
   Zelda fica em camadas separáveis (patches por endereço, randomizer, interface).
 
 ### Alternativas consideradas
@@ -46,7 +46,7 @@ Rodar o jogo do Switch **nativamente no PC**, sem emulador, usando **recompilaç
 
 ## Parte 2: diagnóstico do binário
 
-Detalhes em [DIAGNOSTICO.md](DIAGNOSTICO.md). Em resumo:
+Detalhes em [DIAGNOSTICO.md](letsgo/DIAGNOSTICO.md). Em resumo:
 
 - 4 módulos: `main` (o jogo), `sdk` (bibliotecas da Nintendo), `subsdk0` (**glslc**, compilador de shaders) e
   `subsdk1` (**multimedia**, vídeo). O Zelda só tem `main` + `sdk`.
@@ -118,7 +118,7 @@ Resultado: **cenário 3D correto** (quarto, Pallet Town, céu), captura do Pikac
 
 Os modelos com esqueleto (personagens, Pokémon) apareciam esticados em "espinhos" que convergiam para um ponto.
 O cenário estático estava correto, então câmera e geometria comum funcionavam. Plano e experimentos completos em
-[PLANO-3D.md](PLANO-3D.md).
+[PLANO-3D.md](letsgo/PLANO-3D.md).
 
 | # | Sintoma | Diagnóstico | Causa | Correção | Arquivo |
 |---|---|---|---|---|---|
@@ -265,7 +265,7 @@ mira; zona morta de 0,015 rad/s contra o viés em repouso, amostras com interval
 
 ## Modo "batalhas selvagens" (17/10/2026, experimental)
 Ideia: ao encostar num Pokémon selvagem, em vez da captura estilo Pokémon GO, uma batalha clássica e, depois, a captura,
-como o jogo já faz com o Snorlax, as aves lendárias e o Mewtwo. Detalhes e endereços em [MODO-BATALHA.md](MODO-BATALHA.md);
+como o jogo já faz com o Snorlax, as aves lendárias e o Mewtwo. Detalhes e endereços em [MODO-BATALHA.md](letsgo/MODO-BATALHA.md);
 código em `runtime/hle/wildbattle.c`; opção "Batalhas selvagens (experimental)" no launcher (`wild_battle = 1` no
 `larecomp.ini`) ou `LARECOMP_WILDBATTLE=1`.
 - **Como funciona.** As batalhas "estáticas" são o processo da classe A (fábrica `17f0a0`), que lê o registro de

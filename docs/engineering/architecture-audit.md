@@ -1,6 +1,6 @@
 # Auditoria de arquitetura
 
-_Base: commit `dcdeca3` e as mudanças do ciclo 0. Detalhes mais antigos: [../technical-audit.md](../technical-audit.md) e [../ANALISE-LASRecomp.md](../ANALISE-LASRecomp.md)._
+_Base: commit `dcdeca3` e as mudanças do ciclo 0. Detalhes mais antigos: [../technical-audit.md](../letsgo/technical-audit.md) e [../ANALISE-LASRecomp.md](../letsgo/ANALISE-LASRecomp.md)._
 
 ## Fatos (lidos no código ou medidos)
 

@@ -3,23 +3,23 @@
 Passo a passo do zero até o jogo aberto, a partir do código-fonte. **Para só jogar, use a release** (o zip em
 Releases, veja o [README](../README.md#how-to-play)): ela não precisa de nada disto.
 
-Leva por volta de meia hora, quase toda esperando downloads e a compilação.
+Leva por volta de uma hora, quase toda esperando downloads, a cópia dos arquivos do jogo e a compilação.
 
 ## O que você precisa
 - Windows 10 ou 11, 64 bits
 - CPU com AVX2 (Intel a partir de 2013 / Haswell, AMD a partir de 2015 / Excavator)
 - GPU com Vulkan 1.3 e driver atualizado (NVIDIA, AMD ou Intel recentes)
-- Uns 10 GB livres (arquivos do jogo, código gerado e build)
+- Uns 20 GB livres (arquivos do jogo: o RomFS da 1.3.2 tem 13 GB; código gerado e build: ~1,4 GB)
 - [Git for Windows](https://git-scm.com/download/win) (traz o Git Bash)
-- **Os seus próprios arquivos do jogo**: *Pokémon: Let's Go, Eevee!* ou *Pikachu!*, extraídos da sua cópia (o Eevee
-  **v1.0.0** é o mais testado; as opções experimentais pedem a 1.0.0 de um dos dois). Este
-  projeto não fornece nem ensina a obter esses arquivos ou as chaves.
+- **Os seus próprios arquivos do jogo**: *Pokémon Sword* (ou *Shield*, ainda não testado), extraídos da sua cópia
+  com a atualização **1.3.2** aplicada (a versão mais testada; a DLC é opcional). Este projeto não fornece nem
+  ensina a obter esses arquivos ou as chaves.
 
 ## 1. Baixar o projeto
 No Git Bash, numa pasta com espaço livre (de preferência fora de `Arquivos de Programas`):
 
 ```bash
-git clone https://github.com/raulzrrs/letsgo-recomp.git
+git clone https://github.com/raulzrrs/swsh-recomp.git
 ```
 
 ## 2. Instalar as ferramentas (uma vez)
@@ -53,7 +53,7 @@ recompilam em segundos.
 ```
 
 No launcher, clique em **Selecionar pasta do jogo...** e escolha a pasta com o jogo extraído (a que tem `exefs` e
-`romfs`, ou um `romfs.bin`). Ele confere se é o Eevee ou o Pikachu (program id), copia os arquivos para `extracted/`, gera o código do jogo
+`romfs`, ou um `romfs.bin`). Ele confere qual jogo é (program id), copia os arquivos para `extracted/`, gera o código do jogo
 com o `.venv` e o compila com o clang do MSYS2 (`extracted/lasgame.dll`). É o mesmo fluxo da release, com as
 ferramentas de desenvolvimento no lugar do gerador congelado e do Zig. Depois, clique em **Jogar**.
 
@@ -63,24 +63,25 @@ Crie a pasta `extracted/` na raiz do projeto com:
 ```
 extracted/
   exefs/      main, main.npdm, rtld, sdk, subsdk0, subsdk1   (o ExeFS do jogo)
-  romfs.bin   a imagem RomFS do jogo (uns 4,4 GB)
+  romfs.bin   a imagem RomFS do jogo (13 GB na 1.3.2)
+  aoc/        opcional: a DLC, um <data id>.bin por pacote (docs/DIAGNOSTICO-SWSH.md)
   romfs/      opcional: o RomFS extraído em pastas (útil para mods; o jogo lê o romfs.bin)
 ```
 
 O código gerado depende do executável exato: os remendos do gerador (`tools/patches.py`) e os ganchos do runtime só
-são endereços do `main` 1.0.0 (tabela por build: Eevee e Pikachu, `tools/addrmap.py`) e ficam desligados
-para qualquer outro. `extracted/` está
+são endereços de builds conhecidos (tabelas por build: `tools/addrmap.py`, `runtime/hle/swsh60.c`) e ficam
+desligados para qualquer outro. `extracted/` está
 no `.gitignore` e nunca deve ir para o git.
 
 Traduza o código do jogo para C (o resultado vai para `generated/`, fora do git) e compile. **Sempre com `-j`**: sem
-ele, os ~920 arquivos do jogo compilam um por vez e passam de uma hora.
+ele, os ~1.140 arquivos do jogo compilam um por vez e levam horas.
 
 ```bash
 make gen
 make -j20
 ```
 
-Isso gera também `build/lasgame.dll` (o código do jogo), em 5 a 20 minutos conforme a CPU.
+Isso gera também `build/lasgame.dll` (o código do jogo), em uns 20 minutos numa CPU de 20 threads (mais com menos threads).
 
 ## 5. Jogar
 
@@ -102,15 +103,15 @@ Isso gera também `build/lasgame.dll` (o código do jogo), em 5 a 20 minutos con
 make deps-windows          # FFmpeg só LGPL, com os decodificadores que o jogo usa (precisa do nasm do MSYS2)
 make gen-helper            # o gerador congelado com o PyInstaller (sem Python no PC do jogador)
 tools/fetch_zig.sh         # o compilador Zig, versão fixa e conferida por sha256
-make dist                  # build/dist/LetsGoRecomp-<versão>-windows.zip
+make dist                  # build/dist/SwShRecomp-<versão>-windows.zip
 ```
 
-O zip traz o `LetsGoRecomp.exe`, as DLLs, o gerador, o Zig enxuto (`tools/zig_slim.sh`) e os cabeçalhos do código do
+O zip traz o `SwShRecomp.exe`, as DLLs, o gerador, o Zig enxuto (`tools/zig_slim.sh`) e os cabeçalhos do código do
 jogo. Nada do jogo vai junto: o código é gerado no PC do jogador, a partir da cópia dele. A versão vem de
 `RT_APP_VERSION` em `runtime/paths.h`.
 
 ## Opcional
-- **Tradução / mods:** no launcher, **Instalar tradução...** e escolha o arquivo baixado (.zip, .rar, .7z); depois
+- **Mods (LayeredFS):** no launcher, **Instalar tradução...** e escolha o arquivo baixado (.zip, .rar, .7z); depois
   escolha-a em "Tradução". Também dá para copiar o `romfs` do mod para `mods/<nome>/romfs` à mão.
 - **Fonte do sistema do Switch:** veja [fonts/README.md](../fonts/README.md).
 - **Melhor imagem:** com uma GPU folgada, escolha uma resolução acima da sua tela (por exemplo 4K numa tela 1080p):

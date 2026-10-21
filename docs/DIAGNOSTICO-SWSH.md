@@ -2,7 +2,7 @@
 
 Data: 2026-10-18 · Extraído com hactool 1.4.0 + `prod.keys` do console do usuário (Lockpick_RCM) · Gerador:
 `tools/gen.py` do letsgo-recomp, sem nenhuma mudança. Comparação com o Let's Go Eevee 1.0.0 em
-[DIAGNOSTICO.md](DIAGNOSTICO.md).
+[DIAGNOSTICO.md](letsgo/DIAGNOSTICO.md).
 
 ## O dump
 

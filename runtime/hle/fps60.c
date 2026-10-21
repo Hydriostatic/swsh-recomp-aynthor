@@ -2,13 +2,13 @@
 //
 // The game keeps a table of frame durations G (main+0xf7eeb8: 16.67 ms, 33.33 ms, 50 ms, ...; read through the pointer
 // at main+0x15fb438). The world's update step comes from G[1] through the accessor f_7000039600; menus, battles and
-// captures count their own frames, so at 60 fps they run twice as fast (docs/PESQUISA-60FPS.md). A community "60 FPS"
+// captures count their own frames, so at 60 fps they run twice as fast (docs/letsgo/PESQUISA-60FPS.md). A community "60 FPS"
 // patch changes G[1] for every reader; here:
 //  - the animation systems take "elapsed time" as a fixed 33.33 ms per update and divide it by G[1] to get frames: the
 //    time the accessor hands out is that elapsed time, so with 16.67 ms there they advance half a frame per update at
 //    60 fps - right, by time (menus, the world's animations);
 //  - battles and captures also count integer frames of their own: they keep the game's 33.33 ms and 30 fps (the entry
-//    points of both scenes, mapped in docs/MODO-BATALHA.md, switch to it until the world's update runs again).
+//    points of both scenes, mapped in docs/letsgo/MODO-BATALHA.md, switch to it until the world's update runs again).
 // Scenes move from the 30 fps side to the 60 fps side one at a time, once their frame counters are fixed.
 //
 // LARECOMP_FPS60=1 turns it on (settings: fps = 60). LARECOMP_G1_READERS="<addr>[,<addr>...]" (research): G[1] is

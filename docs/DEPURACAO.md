@@ -21,12 +21,12 @@ Tudo o que foi usado para diagnosticar o port. As variáveis de ambiente valem p
 | `TURBO=0 tools/repro.sh ...` | o `repro.sh` roda em turbo por padrão (`LARECOMP_FPS=0`, ~4x mais rápido: os quadros são os mesmos, só animações de espera ligadas ao tempo real mudam de fase); `TURBO=0` volta ao ritmo real, para medir fps ou áudio |
 | `LARECOMP_DRAW_CHAINS=<quadro>[-<último>]` | registra cada draw, gravação de lista (`begin`) e chamada de lista (`call`) nesses quadros, com a cadeia de funções do jogo (`[chain]`) |
 | `LARECOMP_HOOK_DUMP_FRAMES=<primeiro>-<último>` | limita o `LARECOMP_HOOK_DUMP` a esses quadros |
-| `LARECOMP_ELAPSED_LOG="<função>:<passo>,..."` (+ `LARECOMP_TIME_PROBE_FRAMES=<de>-<até>`) | o passo de tempo (ns) que cada função recebe do objeto de temporizadores, com o objeto e o getter (docs/PESQUISA-60FPS.md, "Mapa temporal") |
+| `LARECOMP_ELAPSED_LOG="<função>:<passo>,..."` (+ `LARECOMP_TIME_PROBE_FRAMES=<de>-<até>`) | o passo de tempo (ns) que cada função recebe do objeto de temporizadores, com o objeto e o getter (docs/letsgo/PESQUISA-60FPS.md, "Mapa temporal") |
 | `LARECOMP_TIMER_USERS=<de>-<até>` | quem lê cada passo de tempo (chamadas ao getter `f_70000395f0` por endereço de retorno), listado no último quadro |
 | `tools/teste60.sh <captura\|batalha> <0\|1\|2>` | a mesma cena a 30 fps e num modo 60, com imagens no mesmo tempo de jogo (`build/teste60/<cena>-<modo>/sheet.png`) |
 | Atenção | o `fnhook` guarda **um gancho por endereço**: o último registrado vale; duas sondas na mesma função se anulam |
 | `LARECOMP_DAYS_AHEAD=<n>` | relógio n dias à frente (coisas diárias: a fome do parceiro, que precisa ser maior que zero para ele comer) |
-| `LARECOMP_WILDBATTLE=1` (+ `LARECOMP_WILDBATTLE_*`) | batalhas selvagens (docs/MODO-BATALHA.md; o launcher liga igual). `SPECIES=<n>`/`LEVEL=<n>`: sempre esse Pokémon (padrão: o tocado); `MOVES=a,b,c,d`: esses golpes (padrão: por nível); `MAX=<n>`: batalhas por execução (padrão: todas); `FADEIN=0` desliga o fade in manual, `FADE_TYPE`/`FADE_DELAY`/`FADE_FRAMES` o ajustam; `LOGPOKE=1` loga os campos do objeto do Pokémon (`=2` grava `build/poke_<quadro>.bin`); `STATE_LOG=1` os estados do processo; `DEBUG=1` grava os passes de um quadro 240 quadros depois da batalha; `USECFG=1` (experimental, derruba o jogo) lança a configuração do construtor |
+| `LARECOMP_WILDBATTLE=1` (+ `LARECOMP_WILDBATTLE_*`) | batalhas selvagens (docs/letsgo/MODO-BATALHA.md; o launcher liga igual). `SPECIES=<n>`/`LEVEL=<n>`: sempre esse Pokémon (padrão: o tocado); `MOVES=a,b,c,d`: esses golpes (padrão: por nível); `MAX=<n>`: batalhas por execução (padrão: todas); `FADEIN=0` desliga o fade in manual, `FADE_TYPE`/`FADE_DELAY`/`FADE_FRAMES` o ajustam; `LOGPOKE=1` loga os campos do objeto do Pokémon (`=2` grava `build/poke_<quadro>.bin`); `STATE_LOG=1` os estados do processo; `DEBUG=1` grava os passes de um quadro 240 quadros depois da batalha; `USECFG=1` (experimental, derruba o jogo) lança a configuração do construtor |
 | `LARECOMP_WATCH=<addr>[,<addr>...]` | vigia de escrita (Windows, `runtime/hle/memwatch.c`): protege a página desses endereços (palavras de 32 bits) e, a cada escrita neles, loga o backtrace de quem escreveu (funções do jogo como `f_<endereço>`). Os endereços do heap **não se repetem entre execuções** |
 | `LARECOMP_WATCH_PARTY=<quadro>` + `LARECOMP_WATCH_SPECIES=133:10,16:9,...` | procura, no heap, registros de 0x104 bytes no formato PB7 (espécie u16 em `+8`, XP u32 em `+0x10`, nível em `+0xEC`) e vigia o XP de cada um. A heurística acha muitos falsos positivos (a estrutura em memória pode não ser PB7 cru) |
 | `LARECOMP_SNAP=<quadro A>,<quadro B>` | copia as páginas não nulas do heap em A e, a cada 250 quadros a partir de B (30 vezes), lista os deltas pequenos mais comuns das palavras que cresceram (3 a 20 acertos) com endereços de exemplo; o ganho de XP de uma equipe é um delta compartilhado. O heap tem muito contador mudando, então o ruído é grande |
@@ -93,7 +93,7 @@ Tudo o que foi usado para diagnosticar o port. As variáveis de ambiente valem p
 | `LARECOMP_LOG_CLEARS=1` | cada limpeza de cor: frame, alvo, formato, máscara e a cor |
 | `LARECOMP_DUMP_TEX_FMT=<formato NVN>` | grava o nível 0 das texturas daquele formato, já sem tiling, em `build/tex/<addr>_<w>x<h>_f<fmt>_row<bytes>.bin` |
 | `LARECOMP_VK_SKIN_ONEBONE=1` | shaders com esqueleto usam só o 1º osso (experimento X4; foi o paliativo antes da correção) |
-| `LARECOMP_VK_SKIN_IDENTITY=1` / `LARECOMP_VK_SKIN_IDX_X=1` / `LARECOMP_VK_SKIN_W=<expr>` | outros experimentos do [PLANO-3D.md](PLANO-3D.md) |
+| `LARECOMP_VK_SKIN_IDENTITY=1` / `LARECOMP_VK_SKIN_IDX_X=1` / `LARECOMP_VK_SKIN_W=<expr>` | outros experimentos do [PLANO-3D.md](letsgo/PLANO-3D.md) |
 | `LARECOMP_DUMP_SKIN=1` + `LARECOMP_DUMP_SKIN_FRAME=<frame>` | grava o 1º draw com esqueleto a partir daquele frame em `build/skin/` |
 
 ### Harness de shader na CPU (`tools/skintest`)
@@ -132,7 +132,7 @@ Não ligue debug info nos shaders para capturar: com milhares de shaders, o repl
   `LARECOMP_FNPROF_BT=<addr>[,...]` (+ `LARECOMP_FNPROF_BT_MAX=<n>`) imprime a pilha (funções `f_<addr>`) nas
   primeiras entradas dessas funções.
 - `tools/fncompare.py --base <perfis sem o evento> --event nome=<perfil>` lista o que só o evento executou; com dois
-  eventos, o que é comum e o que é de cada um (exemplo: docs/MODO-BATALHA.md).
+  eventos, o que é comum e o que é de cada um (exemplo: docs/letsgo/MODO-BATALHA.md).
 - **Ganchos** (runtime/fnhook.c): toda função gerada passa por `FN_ENTER`, que chama `rt_fnhook` enquanto houver
   gancho registrado (`rt_register_fnhook(addr, fn)`; `fn` devolve 1 para tratar a chamada no lugar do jogo;
   `rt_call_original` roda a função original de dentro do gancho). Mudar comportamento não exige gerar a DLL de novo.
@@ -152,6 +152,34 @@ de execução (frame pointers do guest, `x29`) é o caminho.
 ### Jogar enquanto se testa
 `build/jogo/lasrecomp.exe` (dois cliques) é a cópia estável. `make jogo` (`tools/publicar_jogo.sh`, com o jogo
 fechado) copia o build atual para lá depois de validado. Assim, recompilar e testar em `build/` não esbarra no executável travado pelo jogo aberto.
+
+## Desempenho e compilação de shaders (Sword)
+Medições, A/B e as chaves que desligam cada otimização (o valor entre parênteses é o padrão). Os ciclos que as
+mediram estão em `reports/cycles/` e em [docs/engineering](engineering/README.md).
+
+| Variável | Efeito |
+|---|---|
+| `LARECOMP_VK_PROF=1` | a linha `[vk]` a cada 2 s ganha o detalhe do tempo da render thread, cópias, readbacks, cópias persistentes, pré-varredura e as linhas `[hitch]` (quadros > 50 ms: onde foi o tempo) |
+| `LARECOMP_VK_WAITPROF=1` | quanto a render thread esperou a GPU, por quem chamou (`exe+offset`: `addr2line -f -e build/v132/lasrecomp.exe <ImageBase + offset>`) |
+| `LARECOMP_RT_PROF=1` | `[rtprof]` a cada 2 s: ocupação da render thread e as esperas do jogo por ela, por motivo (fila, presents, fence) |
+| `LARECOMP_SAMPLE=<de>:<até>` | perfil por amostragem das threads do jogo e da render thread (thread 1000) entre esses presents (os quadros das linhas `[vk]`): funções `f_<addr>` do jogo e do runtime, próprias e inclusivas; grava `LARECOMP_SAMPLE_OUT` (padrão `build/sample.txt`; a pasta precisa existir) |
+| `LARECOMP_SAMPLE_CPU=1` | com `LARECOMP_SAMPLE`: só o tempo de CPU de cada thread na janela (`[cputime]`), sem amostrar (A/B de builds a 60 fps) |
+| `LARECOMP_DRIVER_CACHE_NONCE=<n>` | cada estágio de shader leva uma constante sem uso: a cache do driver erra e a compilação é medida como a de uma instalação nova (`build/jogar-sword-primeira-vez.bat` usa com `LARECOMP_CACHE_DIR` vazio) |
+| `LARECOMP_CACHE_DIR=<pasta>` | caches de shader / pipeline / receitas em outra pasta (testes com cache fria) |
+| `LARECOMP_FIXED_TIME=<segundos unix>` | o relógio do jogo começa nesse instante e anda a partir do boot (os cenários usam 20/10/2026 14:00); a luz do dia e o clima do Wild Area ainda variaram entre rodadas de horários diferentes (ver `reports/cycles/004.md`) |
+| `LARECOMP_SHADER_HOLD_MS=<ms>` (3000) | quanto um draw espera o seu shader / pipeline; `0`: o modo antigo, 20 ms por quadro (`LARECOMP_SHADER_WAIT_MS`) e depois pula o draw |
+| `LARECOMP_PREFETCH=0` | sem a pré-varredura (o primeiro draw que esperaria procura os programas e pipelines do resto do quadro e os manda compilar em paralelo) |
+| `LARECOMP_BRX_ALL=1` | o tradutor marca toda instrução como alvo de um BRX (o antigo: shaders de 0,3-1,3 s no driver) |
+| `LARECOMP_GPL=1` | pipelines ligados a partir de partes (graphics pipeline library); desligado: não ganhou nada com a cache fria |
+| `LARECOMP_WORKER_BG=0` | as threads de compilação na prioridade normal (padrão: abaixo do jogo) |
+| `LARECOMP_GMEM_EARLY=0` | a memória do jogo vista pela GPU importada no primeiro draw que a usa, não no boot |
+| `LARECOMP_PCACHE=0`, `LARECOMP_PCACHE_MB=<n>` (1024) | sem as cópias persistentes de vértices / índices na VRAM; o teto delas |
+| `LARECOMP_WRITE_WATCH=0` | a memória do jogo sem write watch (sem ele as cópias persistentes ficam desligadas) |
+| `LARECOMP_GCOPY_PRECISE=0`, `LARECOMP_GMEM_PRECISE=0` | as cópias da memória do jogo descartadas a cada escrita / barreira; toda cópia de buffer espera a GPU se houver trabalho com memória global pendente |
+| `LARECOMP_COPY_FLUSH=1`, `LARECOMP_READBACK_SYNC=1`, `LARECOMP_COPY_LOG=1` | cópias de buffer sempre com espera da GPU; readbacks de textura síncronos; registra as cópias que esperaram e por quê |
+| `LARECOMP_VK_SUBS=<n>` (128) | submissões em voo (8 era pouco para as ~60 por quadro de uma cidade) |
+| `LARECOMP_KWAIT=0` | esperas temporizadas do kernel sem o timer de alta resolução |
+| `make NO_HW_FZ=1 B=build/ab-nofz GEN=generated-132` | a biblioteca do jogo com o flush-to-zero emulado (A/B do `SIMD_HW_FZ`) |
 
 ## Vídeo e áudio
 | Variável | Efeito |

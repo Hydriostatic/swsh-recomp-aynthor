@@ -1,7 +1,7 @@
 # Plano: corrigir os modelos 3D com esqueleto
 
-_Criado em 15/10/2026. **Resolvido em 15/10/2026** (Fases 3 e 4, no fim). Contexto completo em [HISTORICO.md](HISTORICO.md) (parte 6) e ferramentas em
-[DEPURACAO.md](DEPURACAO.md)._
+_Criado em 15/10/2026. **Resolvido em 15/10/2026** (Fases 3 e 4, no fim). Contexto completo em [HISTORICO.md](../HISTORICO.md) (parte 6) e ferramentas em
+[DEPURACAO.md](../DEPURACAO.md)._
 
 ## O problema
 Personagens e Pokémon (modelos com esqueleto) aparecem esticados em "espinhos" que **convergem para um ponto no
@@ -85,7 +85,7 @@ texturas e geometria comum funcionam.
         (instrução isolada no harness).
 - [ ] Regressão visual: três cenas fixas (quarto, Pallet Town, batalha) com capturas de referência, comparadas a cada
       mudança no renderer (ideia do modo determinístico do ssbu-recomp).
-- [ ] Registrar no [HISTORICO.md](HISTORICO.md) e atualizar o [PROGRESSO.md](PROGRESSO.md).
+- [ ] Registrar no [HISTORICO.md](../HISTORICO.md) e atualizar o [PROGRESSO.md](PROGRESSO.md).
 
 ## Plano B (se a camada NVN não der conta)
 O HWDER recompila o **próprio driver NVN** do jogo (que já está no nosso `sdk` traduzido) e implementa um
@@ -143,7 +143,7 @@ de `a11` por vértice como a GPU os lê e compará-los com a memória.
 ### Fase 3: RenderDoc ✅ (causa encontrada e corrigida)
 - Captura pelo runtime: `RENDERDOC=1 tools/repro.sh rdc 1310 LARECOMP_RENDERDOC_AT=1290` (vários frames seguidos:
   o jogo não desenha a cena inteira em todo present). Análise com `tools/rdc_skin.py` e `tools/rdc_draw.py` dentro
-  do `qrenderdoc` (detalhes em [DEPURACAO.md](DEPURACAO.md)).
+  do `qrenderdoc` (detalhes em [DEPURACAO.md](../DEPURACAO.md)).
 - **Os bytes de vértice que a GPU lê são idênticos aos da memória**, inclusive `a11` (ex.: `[7, 6]`) e os pesos. O
   formato vinculado é `R8G8B8A8_UINT`, como deveria.
 - Os vértices ruins não "colapsam" num ponto: saem com **`w` perto de 0 ou negativo**. No draw 4746 (ossos `7, 6`) o

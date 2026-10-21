@@ -31,7 +31,7 @@ static uint64_t stat_alpha_func[16];  // draws by NVN alpha test function (Color
 // 3 no program object, 4 primitive mode, 5 pipeline still building, 6 pipeline failed.
 static uint64_t stat_skip_why[8];
 uint64_t g_skin_watch;  // (debug, LARECOMP_DUMP_SKIN: a vertex cbuf watched across frames)
-// docs/PLANO-3D.md experiments, logged with the stats: [0] palettes replaced by identity, [1] skinned-draw cbufs
+// docs/letsgo/PLANO-3D.md experiments, logged with the stats: [0] palettes replaced by identity, [1] skinned-draw cbufs
 // read in place (UBO_DIRECT), [2] skinned-draw cbufs UBO_DIRECT could not place (copied), [3] one-bone shaders.
 static uint64_t g_exp_count[4];
 #define SKIP(why) (stat_skipped++, stat_skip_why[(why) & 7]++)
@@ -1774,7 +1774,7 @@ static void translate_program(void *arg) {
             fclose(f);
         }
     }
-    // Experiment X4 (docs/PLANO-3D.md), LARECOMP_VK_SKIN_ONEBONE=1: skinned vertex shaders see 100% weight on the
+    // Experiment X4 (docs/letsgo/PLANO-3D.md), LARECOMP_VK_SKIN_ONEBONE=1: skinned vertex shaders see 100% weight on the
     // first bone (a12 = bone weights) - rigid, but whole, if the first bone's matrix reaches the GPU correctly.
     // Experiment X6, LARECOMP_VK_SKIN_IDX_X=1: every bone slot uses the first bone index (a11.x), weights unchanged.
     if (p->vi->msl && getenv("LARECOMP_VK_SKIN_IDX_X") && strstr(p->vi->msl, "in uvec4 a11;")) {
@@ -2809,7 +2809,7 @@ static VkDescriptorBufferInfo cbuf_info(int stage, ShaderInfo *si, int k, uint32
     if (size > r.size && r.size) size = r.size;
     if (size < 16) size = 16;
     bool skinned_vs = stage == 0 && ((si->attr_mask >> 11) & 1);  // (Let's Go: a11 = bone indices)
-    // Experiment X2 (docs/PLANO-3D.md), LARECOMP_VK_SKIN_IDENTITY=1: a skinned vertex shader's dynamically indexed
+    // Experiment X2 (docs/letsgo/PLANO-3D.md), LARECOMP_VK_SKIN_IDENTITY=1: a skinned vertex shader's dynamically indexed
     // cbuf (its bone palette) reads identity matrices - models in their bind pose if the rest of the chain is right.
     static int skin_identity = -1;
     if (skin_identity < 0) skin_identity = getenv("LARECOMP_VK_SKIN_IDENTITY") != NULL;
@@ -5290,7 +5290,7 @@ void backend_execute(uint64_t handle) {
 }
 
 // ================================================================== frame interpolation (prototype)
-// LARECOMP_INTERP=1: 60 fps from the game's 30 by drawing an in-between frame (docs/PESQUISA-60FPS.md). The game's
+// LARECOMP_INTERP=1: 60 fps from the game's 30 by drawing an in-between frame (docs/letsgo/PESQUISA-60FPS.md). The game's
 // logic advances one step per frame, so the frame rate can't simply be raised; instead, like RT64 (Zelda64Recomp)
 // and Ship of Harkinian, frame N's draws are run a second time with their constant buffers (camera, world, bone
 // matrices) blended halfway between N-1 and N, and that image is shown half a frame before N.
@@ -5322,7 +5322,7 @@ static float ip_t = 0.5f;
 static uint32_t ip_occ[IP_TAB];  // occurrences of each base key in this frame / replay (by slot)
 static uint64_t ip_occ_key[IP_TAB];
 static uint64_t ip_stats[4];  // blended, kept (no match), words kept, frames replayed
-// LARECOMP_INTERP_DIAG=1: what the in-between image is made of (docs/PESQUISA-60FPS.md, "Diagnóstico da interpolação")
+// LARECOMP_INTERP_DIAG=1: what the in-between image is made of (docs/letsgo/PESQUISA-60FPS.md, "Diagnóstico da interpolação")
 typedef struct { int stage, k; uint32_t size; uint64_t draws, nomatch, tagged, words, changed, blended, jumps, nonfloat; } IpDiag;
 static IpDiag ip_diag[96];
 static int ip_ndiag;
