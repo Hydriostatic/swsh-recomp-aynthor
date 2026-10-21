@@ -2351,7 +2351,13 @@ static void build_pipeline(void *arg) {
     extern bool g_pipe_exec_stats;
     if (g_pipe_exec_stats) pi.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
     VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache, 1, &pi, NULL, &pp->pipe);
-    atomic_fetch_add(&stat_pipe_ns, SDL_GetTicksNS() - tp);
+    uint64_t pdt = SDL_GetTicksNS() - tp;
+    atomic_fetch_add(&stat_pipe_ns, pdt);
+    if (pdt > 150000000ull) {  // (slow driver compiles: which programs, to look at their translation)
+        static _Atomic int nslow;
+        if (atomic_fetch_add(&nslow, 1) < 200)
+            LOG("[slowpipe] %.0f ms: vs %llx fs %llx\n", pdt / 1e6, (unsigned long long)k->prog->code[0], (unsigned long long)k->prog->code[1]);
+    }
     if (r == VK_SUCCESS && g_pipe_exec_stats) pipe_exec_report(pp->pipe, k->prog->code[0], k->prog->code[1]);
     if (r != VK_SUCCESS) {
         static int n;
