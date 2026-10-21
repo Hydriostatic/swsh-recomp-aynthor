@@ -205,6 +205,16 @@ void rt_present(NvnTexture *t) {
     reboot_test_frame(n);
 }
 
+// Render thread: the command lists queued after the one running now (exec.c's prefetch walks them for their needs).
+int rt_pending_lists(uint64_t *out, int max) {
+    int n = 0;
+    pthread_mutex_lock(&lk);
+    for (unsigned i = qhead + 1; i != qtail && n < max; i++)
+        if (queue[i % QN].kind == RJ_EXEC) out[n++] = queue[i % QN].handle;
+    pthread_mutex_unlock(&lk);
+    return n;
+}
+
 // Runs fn(arg) on the render thread, after everything queued before it, and returns when it is done.
 void rt_call(void (*fn)(void *), void *arg) {
     if (!rt_active() || on_render_thread) { fn(arg); return; }

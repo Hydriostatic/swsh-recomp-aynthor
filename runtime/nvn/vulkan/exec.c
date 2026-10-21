@@ -21,6 +21,7 @@
 static uint64_t g_draws_total;  // (never reset: LARECOMP_COUNTER_LOG)
 static void watch_tex(NvnTexture *t, const char *what, const NvnTexture *from);  // (LARECOMP_WATCH_TEX, below)
 static uint64_t stat_draws, stat_skipped, stat_passes, stat_dispatches, stat_wait_ns, stat_flushes, stat_feedback_copies;
+static uint64_t stat_pf_walks, stat_pf_pipes, stat_pf_progs, stat_pf_ns;  // (prefetch, below)
 static _Atomic uint64_t stat_gpl_links, stat_gpl_link_ns, stat_gpl_parts, stat_gpl_part_ns, stat_gpl_used, stat_gpl_failed;  // (pipeline parts, below)
 static uint64_t stat_copy_flushed, stat_copy_inline;  // CopyBufferToBuffer: with a GPU flush first / without
 static uint64_t stat_nvn_barriers, stat_barrier_bits[0x200];  // nvnCommandBufferBarrier: applied (nonzero), and per bit value
@@ -1222,6 +1223,12 @@ const char *renderer_stats(void) {
                  (unsigned long long)atomic_exchange(&stat_gpl_parts, 0), atomic_exchange(&stat_gpl_part_ns, 0) / 1e6,
                  (unsigned long long)atomic_exchange(&stat_gpl_links, 0), atomic_exchange(&stat_gpl_link_ns, 0) / 1e6,
                  (unsigned long long)atomic_exchange(&stat_gpl_used, 0), (unsigned long long)atomic_exchange(&stat_gpl_failed, 0));
+    }
+    if (stat_pf_walks) {
+        size_t n = strlen(stats_text);
+        snprintf(stats_text + n, sizeof stats_text - n, " | prefetch %llu walks (%.0f ms), %llu programs, %llu pipelines",
+                 (unsigned long long)stat_pf_walks, stat_pf_ns / 1e6, (unsigned long long)stat_pf_progs, (unsigned long long)stat_pf_pipes);
+        stat_pf_walks = stat_pf_ns = stat_pf_progs = stat_pf_pipes = 0;
     }
     if (stat_gcopy_drops || stat_gcopy_kept) {
         size_t n = strlen(stats_text);
@@ -3646,6 +3653,235 @@ void recipes_stats(char *out, size_t n) {
     stat_recipe_progs = stat_recipe_pipes = stat_recipe_adopted = stat_recipe_recorded = 0;
 }
 
+// The shader keys a draw's program is translated for (vertex attribute kinds, target kinds, window origin...).
+static void draw_shader_keys(ShaderKey *vkey, ShaderKey *fkey) {
+    memset(vkey, 0, sizeof *vkey);
+    memset(fkey, 0, sizeof *fkey);
+    vkey->glsl = fkey->glsl = 1;
+    vkey->flip_y = fkey->flip_y = nvn_window_origin() == 0;
+    vkey->depth_minus_one = nvn_depth_mode() == 0;
+    for (int i = 0; i < st.nattrib; i++) vkey->attr_kind[i] = (uint8_t)attr_kind(st.attrib[i] & 0xFF);
+    for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) fkey->rt_kind[i] = (uint8_t)rt_kind(st.rt.color[i]->format);
+}
+
+// Textures bound to integer formats: the program's variant that declares them so (ShaderKey.tex_uint / tex_sint).
+// True when the keys changed (the program has to be asked for again).
+static bool draw_texint_keys(Prog *pr, ShaderKey *vkey, ShaderKey *fkey) {
+    static int texint = -1;
+    if (texint < 0) texint = !getenv("LARECOMP_TEXINT") || atoi(getenv("LARECOMP_TEXINT")) != 0;
+    if (!texint) return false;
+    uint32_t m[2][2] = {{0, 0}, {0, 0}};  // [stage][uint, sint]
+    for (int sgi = 0; sgi < 2; sgi++) {
+        ShaderInfo *si = sgi ? pr->fi : pr->vi;
+        for (int i = 0; si && i < si->ntex && i < 32; i++) {
+            if (si->tex[i].shadow) continue;
+            NvnTexture *t = shader_texture_object(sgi, &si->tex[i]);
+            int kind = t ? rt_kind(t->format) : 0;
+            if (kind) m[sgi][kind == 2 ? 0 : 1] |= 1u << i;
+        }
+    }
+    if (m[0][0] == vkey->tex_uint && m[0][1] == vkey->tex_sint && m[1][0] == fkey->tex_uint && m[1][1] == fkey->tex_sint) return false;
+    vkey->tex_uint = m[0][0], vkey->tex_sint = m[0][1], fkey->tex_uint = m[1][0], fkey->tex_sint = m[1][1];
+    return true;
+}
+
+// The pipeline key of a draw of program pr into a pass with these formats.
+static void pipe_key_fill(PipeKey *k, Prog *pr, uint8_t cls, uint32_t ncolor, const VkFormat *color, VkFormat depth, VkFormat stencil,
+                          uint32_t samples) {
+    memset(k, 0, sizeof *k);
+    k->prog = pr;
+    k->ncolor = ncolor;
+    // (only the pass's own slots: the ones past them keep what the last pass with more targets set, so a depth-only
+    // pass's pipelines got several keys and were built again for each - LAS Recomp 3921201)
+    for (uint32_t i = 0; i < ncolor && i < 8; i++) k->color[i] = color[i];
+    k->depth = depth;
+    k->stencil = stencil;
+    k->samples = samples;
+    for (int i = 0; i < 32; i++) {
+        if (!(pr->vi->attr_mask & (1u << i))) continue;
+        k->attr_mask |= 1u << i;
+        uint32_t a = i < st.nattrib ? st.attrib[i] : 0x2E;
+        uint32_t fmt = a & 0xFF, stream = (a >> 8) & 0x1F, off = a >> 13;
+        if (i >= st.nattrib || fmt == 0 || stream >= 16) {  // unbound attribute: (0, 0, 0, 1) from a constant stream
+            k->attr_fmt[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
+            k->attr_bind[i] = ZERO_BINDING;
+            k->used_streams |= 1u << ZERO_BINDING;
+            continue;
+        }
+        k->attr_fmt[i] = vertex_format_supported(vertex_format(fmt));
+        k->attr_off[i] = off;
+        k->attr_bind[i] = stream;
+        k->used_streams |= 1u << stream;
+    }
+    for (int s = 0; s < 16; s++) {
+        if (!(k->used_streams & (1u << s))) continue;
+        k->stride[s] = s < st.nstream ? st.stream[s][0] : 0;
+        k->divisor[s] = s < st.nstream && k->stride[s] ? st.stream[s][1] : 0;
+        if (k->divisor[s] > 1 && !g_vk.divisor) k->divisor[s] = 1;
+    }
+    for (uint32_t i = 0; i < k->ncolor && i < 8; i++) {
+        if (!st.rt.color[i] || k->color[i] == VK_FORMAT_UNDEFINED) continue;
+        // Targets the fragment shader doesn't output keep their contents on Metal, but are undefined in Vulkan
+        // (NVIDIA writes black): mask them. Foliage depth pre-passes left black silhouettes (user 2026-10-08).
+        k->write_mask[i] = ((pr->fi->out_mask >> (i * 4)) & 0xF) ? (st.channel_mask >> (i * 4)) & 0xF : 0;
+        if (((st.color_state[0] >> i) & 1) && !rt_kind(st.rt.color[i]->format)) {
+            k->blend_on |= (uint8_t)(1u << i);
+            memcpy(k->blend[i], st.blend[i], 8);
+        }
+    }
+    k->a2c = st.ms[0xC] != 0;
+    k->topo_class = cls;
+    k->poly_fill = st.poly[2] != 1;
+    k->depth_clamp = st.depth_clamp && g_vk.depth_clamp;
+}
+
+// ================================================================== prefetch of a list's programs / pipelines
+// A first visit (a town: ~350 new programs and pipelines at once) held each draw while its own program and pipeline
+// were built - one at a time on this thread, the 16 workers idle, since the next draw's needs were only known after
+// it (8 s at a town's entry with a cold driver cache). At the first draw of a list that has to wait, the rest of the
+// list is walked once without recording anything: state commands only (no copies, clears, barriers, syncs...), and
+// each draw's program is asked for and, once it is ready, its pipeline - the same keys as the draw itself computes,
+// so the builds run on the workers in parallel and the draws then find them built or building. Pass formats are read
+// from the render targets' existing images (a target without one yet: that draw is left to the draw itself). A
+// wrong guess only builds a pipeline nobody uses; what a draw binds is decided by the draw. LARECOMP_PREFETCH=0: off.
+static int g_prefetch;               // > 0: exec_list is walking a list for its needs (no recording, no side effects)
+static bool g_pf_progs_pending;      // a walk met programs still being translated: walk again once they are
+static Prog *g_pf_wait[1024];        // ... those programs
+static int g_pf_nwait;
+static uint64_t g_exec_top;          // the submitted (depth 0) list being executed
+int rt_pending_lists(uint64_t *out, int max);  // renderthread.c: the lists queued after it
+static uint64_t g_pf_list_epoch, g_pf_done_epoch;  // one prefetch per submitted list
+static uint64_t stat_pf_walks, stat_pf_pipes, stat_pf_progs, stat_pf_ns;
+static void exec_list(uint64_t handle, int depth);
+
+static bool pf_on(void) {
+    static int on = -1;
+    if (on < 0) on = !getenv("LARECOMP_PREFETCH") || atoi(getenv("LARECOMP_PREFETCH")) != 0;
+    return on && !sync_shaders();
+}
+
+// The commands a walk applies (the state the draws' keys come from); every other one is skipped.
+static bool pf_applies(uint32_t op) {
+    switch (op) {
+    case CMD_END: case CMD_JUMP: case CMD_CALL: case CMD_OBJECT: case CMD_SET_DEPTH_CLAMP:
+    case CMD_BIND_PROGRAM: case CMD_BIND_BLEND: case CMD_BIND_CHANNEL_MASK: case CMD_BIND_COLOR: case CMD_BIND_DEPTH_STENCIL:
+    case CMD_BIND_MULTISAMPLE: case CMD_BIND_POLYGON: case CMD_BIND_VERTEX_ATTRIB: case CMD_BIND_VERTEX_STREAM:
+    case CMD_BIND_VERTEX_BUFFERS: case CMD_BIND_UNIFORM_BUFFERS: case CMD_BIND_STORAGE_BUFFERS: case CMD_BIND_TEXTURES:
+    case CMD_BIND_IMAGES: case CMD_SET_TEXTURE_POOL: case CMD_SET_SAMPLER_POOL: case CMD_SET_RENDER_TARGETS:
+    case CMD_SET_PRIMITIVE_RESTART: case CMD_DRAW_ARRAYS: case CMD_DRAW_ELEMENTS:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// The pass formats begin_pass would use for the bound targets: from their images, or for a target without one yet
+// the format its image will get (textures.c: the NVN format's Vulkan format, its sample count).
+static bool pf_pass_formats(uint32_t *ncolor, VkFormat color[8], VkFormat *depth, VkFormat *stencil, uint32_t *samples) {
+    uint32_t n = (uint32_t)st.rt.ncolor, last = 0;
+    *samples = 1;
+    for (uint32_t i = 0; i < n && i < 8; i++) {
+        NvnTexture *t = st.rt.color[i];
+        color[i] = VK_FORMAT_UNDEFINED;
+        if (!t) continue;
+        TexBackend *b = t->backend;
+        VkFormat bf = b ? b->format : vk_format(t->format);
+        color[i] = st.rt.has_cview[i] && (st.rt.cview[i].setmask & 4) && vk_format(t->format) == bf
+                 ? vk_format(st.rt.cview[i].format) : bf;
+        *samples = b ? b->samples : t->samples > 1 ? t->samples : 1;
+        last = i + 1;
+    }
+    *ncolor = last;
+    *depth = *stencil = VK_FORMAT_UNDEFINED;
+    if (st.rt.depth) {
+        TexBackend *b = st.rt.depth->backend;
+        if (renderer_format_is_depth(st.rt.depth->format)) {
+            VkFormat df = b ? b->format : vk_format(st.rt.depth->format);
+            bool has_s = b ? (b->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) != 0
+                           : df == VK_FORMAT_D24_UNORM_S8_UINT || df == VK_FORMAT_D32_SFLOAT_S8_UINT || df == VK_FORMAT_D16_UNORM_S8_UINT ||
+                             df == VK_FORMAT_S8_UINT;
+            bool has_d = b ? (b->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) != 0 : df != VK_FORMAT_S8_UINT;
+            if (has_d) *depth = df;
+            if (has_s) *stencil = df;
+            if (!last) *samples = b ? b->samples : st.rt.depth->samples > 1 ? st.rt.depth->samples : 1;
+        }
+    }
+    return true;
+}
+
+static void pf_draw(CmdRec *r) {
+    if (!st.program) return;
+    ShaderKey vkey, fkey;
+    draw_shader_keys(&vkey, &fkey);
+    Prog *pr = get_program(st.program, &vkey, &fkey);
+    if (!pr) return;
+    if (atomic_load(&pr->state) == 0) { g_pf_progs_pending = true; if (g_pf_nwait < 1024) g_pf_wait[g_pf_nwait++] = pr; return; }
+    if (atomic_load(&pr->state) != 1) return;
+    if (draw_texint_keys(pr, &vkey, &fkey)) {
+        pr = get_program(st.program, &vkey, &fkey);
+        if (!pr) return;
+        if (atomic_load(&pr->state) == 0) { g_pf_progs_pending = true; if (g_pf_nwait < 1024) g_pf_wait[g_pf_nwait++] = pr; return; }
+        if (atomic_load(&pr->state) != 1) return;
+    }
+    VkPrimitiveTopology topo;
+    uint8_t cls;
+    uint32_t mode = (uint32_t)r->x[0];
+    if (!topology(mode, &topo, &cls) && mode != 6 && mode != 7 && mode != 9) return;
+    uint32_t ncolor, samples;
+    VkFormat color[8], depth, stencil;
+    if (!pf_pass_formats(&ncolor, color, &depth, &stencil, &samples)) return;
+    PipeKey k;
+    pipe_key_fill(&k, pr, cls, ncolor, color, depth, stencil, samples);
+    bool created;
+    pipe_get(&k, false, &created);
+    if (created) stat_pf_pipes++;
+}
+
+// Called by a draw that is about to wait for its program or pipeline: walk the rest of the list once (twice when
+// programs were still translating: the second walk asks for their pipelines).
+static void pf_rest_of_list(void) {
+    if (g_prefetch || !pf_on() || g_pf_done_epoch == g_pf_list_epoch || !g_exec_top) return;
+    g_pf_done_epoch = g_pf_list_epoch;
+    uint64_t t0 = SDL_GetTicksNS();
+    static __typeof__(st) saved;
+    static NvnProgram saved_comb;
+    saved = st;
+    saved_comb = g_comb_prog;
+    // this whole list (its draws sit in called lists: the part already run only finds what exists) and the lists queued
+    // after it (the rest of the frame); each walk starts from the state at this point
+    static uint64_t lists[64];
+    lists[0] = g_exec_top;
+    static uint64_t queued_frame = ~0ull;  // (the queued lists: once a frame)
+    bool queued = queued_frame != vk_frame_counter() && rt_active() && rt_on_render_thread();
+    if (queued) queued_frame = vk_frame_counter();
+    int nl = 1 + (queued ? rt_pending_lists(lists + 1, 63) : 0);
+    for (int walk = 0; walk < 3; walk++) {
+        g_pf_progs_pending = false;
+        g_pf_nwait = 0;
+        g_prefetch++;
+        for (int l = 0; l < nl; l++) {
+            st = saved;
+            g_comb_prog = saved_comb;
+            exec_list(lists[l], 0);
+        }
+        g_prefetch--;
+        stat_pf_walks++;
+        if (!g_pf_progs_pending) break;
+        // the programs this walk asked for translate on the workers in parallel: wait (bounded) for them, taking the
+        // ones nobody has started (job_claim) to translate here meanwhile
+        stat_pf_progs += (uint64_t)g_pf_nwait;
+        uint64_t tw = SDL_GetTicksNS();
+        for (int i = 0; i < g_pf_nwait; i++)
+            if (atomic_load(&g_pf_wait[i]->state) == 0 && job_claim(translate_program, g_pf_wait[i])) translate_program(g_pf_wait[i]);
+        for (int i = 0; i < g_pf_nwait && SDL_GetTicksNS() - tw < 1500000000ull;)
+            if (atomic_load(&g_pf_wait[i]->state) == 0) SDL_DelayNS(200000);
+            else i++;
+    }
+    st = saved;
+    g_comb_prog = saved_comb;
+    stat_pf_ns += SDL_GetTicksNS() - t0;
+}
+
 static uint64_t prof_tp_;
 static void draw_(CmdRec *r, bool indexed) {
     if (prof) prof_tp_ = SDL_GetTicksNS();
@@ -3669,34 +3905,17 @@ static void draw_(CmdRec *r, bool indexed) {
         extern bool fps60_menu(void);
         if (fps60_menu()) ip_draw_obj = true;
     }
-    ShaderKey vkey = {0}, fkey = {0};
-    vkey.glsl = fkey.glsl = 1;
-    vkey.flip_y = fkey.flip_y = nvn_window_origin() == 0;
-    vkey.depth_minus_one = nvn_depth_mode() == 0;
-    for (int i = 0; i < st.nattrib; i++) vkey.attr_kind[i] = (uint8_t)attr_kind(st.attrib[i] & 0xFF);
-    for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) fkey.rt_kind[i] = (uint8_t)rt_kind(st.rt.color[i]->format);
+    ShaderKey vkey, fkey;
+    draw_shader_keys(&vkey, &fkey);
     Prog *pr = get_program(st.program, &vkey, &fkey);
+    if (pr && atomic_load(&pr->state) == 0) pf_rest_of_list();  // (about to wait: find the rest of the list's needs first)
     if (pr) wait_built(&pr->state, translate_program, pr);
     if (!pr || atomic_load(&pr->state) != 1) { SKIP(pr ? 1 + (atomic_load(&pr->state) > 1) : 3); return; }
-    static int texint = -1;
-    if (texint < 0) texint = !getenv("LARECOMP_TEXINT") || atoi(getenv("LARECOMP_TEXINT")) != 0;
-    if (texint) {  // textures bound to integer formats: the program's variant that declares them so (ShaderKey.tex_uint / tex_sint)
-        uint32_t m[2][2] = {{0, 0}, {0, 0}};  // [stage][uint, sint]
-        for (int sgi = 0; sgi < 2; sgi++) {
-            ShaderInfo *si = sgi ? pr->fi : pr->vi;
-            for (int i = 0; si && i < si->ntex && i < 32; i++) {
-                if (si->tex[i].shadow) continue;
-                NvnTexture *t = shader_texture_object(sgi, &si->tex[i]);
-                int kind = t ? rt_kind(t->format) : 0;
-                if (kind) m[sgi][kind == 2 ? 0 : 1] |= 1u << i;
-            }
-        }
-        if (m[0][0] != vkey.tex_uint || m[0][1] != vkey.tex_sint || m[1][0] != fkey.tex_uint || m[1][1] != fkey.tex_sint) {
-            vkey.tex_uint = m[0][0], vkey.tex_sint = m[0][1], fkey.tex_uint = m[1][0], fkey.tex_sint = m[1][1];
-            pr = get_program(st.program, &vkey, &fkey);
-            if (pr) wait_built(&pr->state, translate_program, pr);
-            if (!pr || atomic_load(&pr->state) != 1) { SKIP(pr ? 1 + (atomic_load(&pr->state) > 1) : 3); return; }
-        }
+    if (draw_texint_keys(pr, &vkey, &fkey)) {
+        pr = get_program(st.program, &vkey, &fkey);
+        if (pr && atomic_load(&pr->state) == 0) pf_rest_of_list();
+        if (pr) wait_built(&pr->state, translate_program, pr);
+        if (!pr || atomic_load(&pr->state) != 1) { SKIP(pr ? 1 + (atomic_load(&pr->state) > 1) : 3); return; }
     }
     {   // fragment-shader hash: interior backdrop detection (widescreen), skip lists, item twinkle (renderer.m)
         static uint64_t last_fs, last_hash;
@@ -3765,57 +3984,14 @@ static void draw_(CmdRec *r, bool indexed) {
     if (prof) prof_pre += prof_tk_ - prof_tp_;
     // ---- pipeline
     PipeKey k;
-    memset(&k, 0, sizeof k);
-    k.prog = pr;
-    k.ncolor = pass_ncolor;
-    // (only the pass's own slots: the ones past them keep what the last pass with more targets set, so a depth-only
-    // pass's pipelines got several keys and were built again for each - LAS Recomp 3921201)
-    for (uint32_t i = 0; i < pass_ncolor && i < 8; i++) k.color[i] = pass_color[i];
-    k.depth = pass_depth;
-    k.stencil = pass_stencil;
-    k.samples = pass_samples;
-    for (int i = 0; i < 32; i++) {
-        if (!(pr->vi->attr_mask & (1u << i))) continue;
-        k.attr_mask |= 1u << i;
-        uint32_t a = i < st.nattrib ? st.attrib[i] : 0x2E;
-        uint32_t fmt = a & 0xFF, stream = (a >> 8) & 0x1F, off = a >> 13;
-        if (i >= st.nattrib || fmt == 0 || stream >= 16) {  // unbound attribute: (0, 0, 0, 1) from a constant stream
-            k.attr_fmt[i] = VK_FORMAT_R32G32B32A32_SFLOAT;
-            k.attr_bind[i] = ZERO_BINDING;
-            k.used_streams |= 1u << ZERO_BINDING;
-            continue;
-        }
-        k.attr_fmt[i] = vertex_format_supported(vertex_format(fmt));
-        k.attr_off[i] = off;
-        k.attr_bind[i] = stream;
-        k.used_streams |= 1u << stream;
-    }
-    for (int s = 0; s < 16; s++) {
-        if (!(k.used_streams & (1u << s))) continue;
-        k.stride[s] = s < st.nstream ? st.stream[s][0] : 0;
-        k.divisor[s] = s < st.nstream && k.stride[s] ? st.stream[s][1] : 0;
-        if (k.divisor[s] > 1 && !g_vk.divisor) k.divisor[s] = 1;
-    }
-    for (uint32_t i = 0; i < k.ncolor && i < 8; i++) {
-        if (!st.rt.color[i] || k.color[i] == VK_FORMAT_UNDEFINED) continue;
-        // Targets the fragment shader doesn't output keep their contents on Metal, but are undefined in Vulkan
-        // (NVIDIA writes black): mask them. Foliage depth pre-passes left black silhouettes (user 2026-10-08).
-        k.write_mask[i] = ((pr->fi->out_mask >> (i * 4)) & 0xF) ? (st.channel_mask >> (i * 4)) & 0xF : 0;
-        if (((st.color_state[0] >> i) & 1) && !rt_kind(st.rt.color[i]->format)) {
-            k.blend_on |= (uint8_t)(1u << i);
-            memcpy(k.blend[i], st.blend[i], 8);
-        }
-    }
-    k.a2c = st.ms[0xC] != 0;
-    k.topo_class = cls;
-    k.poly_fill = st.poly[2] != 1;
-    k.depth_clamp = st.depth_clamp && g_vk.depth_clamp;
+    pipe_key_fill(&k, pr, cls, pass_ncolor, pass_color, pass_depth, pass_stencil, pass_samples);
     stat_alpha_func[st.color_state[2] & 15]++;
     bool created;
     Pipe *pp = pipe_get(&k, false, &created);
-    if (created) recipe_record(pr, &k);
+    if (created || (!pp->drawn && !pp->prewarmed)) recipe_record(pr, &k);  // (a prefetched pipe: first drawn here)
     else if (pp->prewarmed && !pp->drawn) stat_recipe_adopted++;
     pp->drawn = true;
+    if (atomic_load(&pp->state) == 0) pf_rest_of_list();  // (about to wait: find the rest of the list's needs first)
     VkPipeline use = VK_NULL_HANDLE;
     if (g_vk.gpl && atomic_load(&pp->state) != 1) {  // (whole pipeline not ready: the one linked from parts)
         if (!pp->fast) pp->fast = gpl_link(&pp->k);
@@ -4834,7 +5010,8 @@ void renderer_save_texture_tex(TexBackend *b, const char *path) {
 static void exec_list(uint64_t handle, int depth) {
     uint64_t p = handle;
     if (depth == 0) st.obj = 0, st.obj_draw = 0;  // (a submitted list starts with no object; its called lists inherit)
-    if (depth == 0) {
+    if (depth == 0 && !g_prefetch) g_pf_list_epoch++, g_exec_top = handle;
+    if (depth == 0 && !g_prefetch) {
         sh_pump();
         recipes_pump();
         pc_scan();
@@ -4847,6 +5024,9 @@ static void exec_list(uint64_t handle, int depth) {
     for (int guard = 0; guard < 10000000; guard++) {
         CmdRec *r = cmd_rec_at(p);  // (p is a guest address; the record is in the shadow, nvn.h)
         void *x = r->extra;
+        if (g_prefetch) {  // (a walk for the list's needs: state and draws only)
+            if (!pf_applies(r->op)) { p += CMD_GSIZE(r->size); continue; }
+        }
         if (r->op < CMD_COUNT) op_counts[r->op]++;
         if (ip_replaying && ip_skip_op(r->op)) { p += CMD_GSIZE(r->size); continue; }
         switch (r->op) {
@@ -5021,8 +5201,8 @@ static void exec_list(uint64_t handle, int depth) {
             }
             break;
         case CMD_DISPATCH: dispatch_compute((uint32_t)r->x[0], (uint32_t)r->x[1], (uint32_t)r->x[2]); break;
-        case CMD_DRAW_ARRAYS: draw(r, false); break;
-        case CMD_DRAW_ELEMENTS: draw(r, true); break;
+        case CMD_DRAW_ARRAYS: if (g_prefetch) pf_draw(r); else draw(r, false); break;
+        case CMD_DRAW_ELEMENTS: if (g_prefetch) pf_draw(r); else draw(r, true); break;
         case CMD_UPDATE_UNIFORM_BUFFER:
             readback_sync_range(r->x[0] + r->x[2], r->x[3]);
             memcpy((void *)(uintptr_t)(r->x[0] + r->x[2]), x, r->x[3]);
