@@ -42,3 +42,6 @@ reports/captures/
 reports/profiling/
 .agent/runtime/
 __pycache__/
+
+# Estado local do supervisor de engenharia (tools/agent/supervisor.py): não vai para o repositório público
+.agent/
