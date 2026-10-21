@@ -52,7 +52,7 @@ without the frame cap, about 90 to 120 fps.
 | CPU | x86-64 with AVX2, FMA and BMI2 (Intel Haswell / AMD Zen or newer) |
 | GPU | Vulkan 1.3 |
 | RAM | about 5 GB while playing |
-| Disk | about 17 GB free (2 GB of it for the prepared shaders) |
+| Disk | about 18 GB free (3 GB of it for the prepared shaders) |
 
 ## Supported games
 
@@ -74,7 +74,7 @@ without the frame cap, about 90 to 120 fps.
 Everything stays in that folder (settings in `larecomp.ini`, saves, shader caches, the log `lasrecomp.log`). To
 update, unzip a new release over it.
 
-**On the first start** the game's shaders are prepared for your GPU in the background (about 5 minutes on an 8-core
+**On the first start** the game's shaders are prepared for your GPU in the background (about 6 minutes on an 8-core
 CPU; the title screen runs slower meanwhile, and the game is playable). After that a first visit to a place mostly just
 links what was prepared; what isn't in the game files is still compiled when first seen, which can hitch for a moment.
 

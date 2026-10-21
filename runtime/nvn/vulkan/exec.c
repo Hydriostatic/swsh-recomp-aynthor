@@ -2667,8 +2667,33 @@ static VkPipeline gpl_build_part(int kind, const PipeKey *k) {
     uint64_t t0 = SDL_GetTicksNS();
     VkResult r = vkCreateGraphicsPipelines(g_vk.dev, g_vk.pcache_parts, 1, &pi, NULL, &p);  // (their own cache: device.c)
     atomic_store(&g_vk.parts_dirty, 1);
-    atomic_fetch_add(&stat_gpl_part_ns, SDL_GetTicksNS() - t0);
+    uint64_t dt = SDL_GetTicksNS() - t0;
+    atomic_fetch_add(&stat_gpl_part_ns, dt);
     atomic_fetch_add(&stat_gpl_parts, 1);
+    // A stage's part that took the driver more than 20 ms was not in the caches: the shader preparation (prep.c) did not
+    // build it. The stage, the hash of its GLSL (prep.c logs the same with LARECOMP_PREP_DEBUG) and the keys that
+    // shape it, to tell a stage the game files lack from a key the preparation guessed differently.
+    const Prog *pg = k->prog;
+    if ((kind == GP_PR || kind == GP_FS) && dt > 20000000 && pg->vi && pg->fi) {
+        static _Atomic int nmiss;
+        if (atomic_fetch_add(&nmiss, 1) < 4000) {
+            const ShaderInfo *si = kind == GP_FS ? pg->fi : pg->vi;
+            uint64_t g = 0xcbf29ce484222325ull;
+            for (const char *q = si->msl; q && *q; q++) g = (g ^ (uint8_t)*q) * 0x100000001B3ull;
+            char keys[160];
+            if (kind == GP_PR) {
+                int n = snprintf(keys, sizeof keys, "attrs");
+                for (int i = 0; i < 32 && n < (int)sizeof keys - 8; i++)
+                    if (pg->vi->attr_mask & (1u << i)) n += snprintf(keys + n, sizeof keys - n, " %d:%d", i, pg->vkey.attr_kind[i]);
+            } else {
+                snprintf(keys, sizeof keys, "inputs %x of %x, rt %d%d%d%d, tex u%x s%x", pg->fi->attr_mask & pg->fkey.vs_out_mask,
+                         pg->fi->attr_mask, pg->fkey.rt_kind[0], pg->fkey.rt_kind[1], pg->fkey.rt_kind[2], pg->fkey.rt_kind[3],
+                         pg->fkey.tex_uint, pg->fkey.tex_sint);
+            }
+            LOG("[partmiss] %s %016llx glsl %016llx %.0f ms (%s)\n", kind == GP_FS ? "fs" : "vs",
+                (unsigned long long)pg->chash[kind == GP_FS], (unsigned long long)g, dt / 1e6, keys);
+        }
+    }
     if (r != VK_SUCCESS) {
         static int n;
         if (n++ < 10) LOG("[vk] pipeline library part %d failed: %d\n", kind, r);

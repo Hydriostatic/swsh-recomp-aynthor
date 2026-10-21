@@ -235,7 +235,7 @@ static void done_path(char *out, size_t n) { snprintf(out, n, "%s/shader_prep.bi
 // cache/shader_prep_complete: one u64, this build + GPU + driver (g_epoch) mixed with the files scanned. A start that
 // finds it skips the preparation; without it every start read and translated all 18k stages again (38 s of CPU) to
 // learn that every part was done.
-#define PREP_VERSION 2  // (what the preparation covers: 2 = the executables' shaders too)
+#define PREP_VERSION 3  // (what the preparation covers: 2 = the executables' shaders too, 3 = float 7/8/11, integer target 1)
 static uint64_t complete_id(void) { return (g_epoch ^ (uint64_t)g_nfiles * 0x9E3779B97F4A7C15ull ^ g_bytes * 31 ^ PREP_VERSION * 0x51ED27ull) | 1; }
 
 static bool complete_check(void) {
@@ -366,9 +366,10 @@ static ShaderInfo *build_stage(const Stage *s, const ShaderKey *key, bool want_i
 
 static uint64_t key_id(uint64_t h, const ShaderKey *k) { return fnv1a((const uint8_t *)k, sizeof *k) ^ h * 0x100000001B3ull ^ g_epoch; }
 
-// Vertex attributes the game feeds as unsigned integers (the bone indices and weights' companions: locations 7, 8 and
-// 11 in the recorded draws; every other location is always a float). A vertex stage reading them gets them unsigned:
-// a combination per stage (8 at most) doubled the parts and the disk for draws that don't come (25141 parts, 7.4 GB).
+// Vertex attributes the game feeds as unsigned integers at some draws and as floats at others: locations 7, 8 and 11
+// (the bone indices and their companions on skinned models; something else, a float, on others: a new game drew 31
+// vertex stages that read them as floats). A stage reading any of them gets both: all of them unsigned, all floats.
+// (Every combination, 8 at most per stage, took 25141 parts and 7.4 GB for draws that don't come.)
 static const int INT_LOCS[] = {7, 8, 11};
 
 static void build_vertex(Stage *s) {
@@ -376,20 +377,25 @@ static void build_vertex(Stage *s) {
     key_defaults(&k);
     for (int i = 0; i < 3; i++) k.attr_kind[INT_LOCS[i]] = 2;  // (the kind of a location the stage doesn't read is unused)
     ShaderInfo *si = build_stage(s, &k, true, key_id(s->h, &k));
-    if (si) s->out_mask = si->out_mask;  // (the fragment stages it pairs with are keyed by it)
+    if (!si) return;
+    s->out_mask = si->out_mask;  // (the fragment stages it pairs with are keyed by it)
+    bool reads = false;
+    for (int i = 0; i < 3; i++) reads |= (si->attr_mask >> INT_LOCS[i]) & 1;
     maxwell_free(si);
+    if (!reads) return;
+    for (int i = 0; i < 3; i++) k.attr_kind[INT_LOCS[i]] = 0;
+    maxwell_free(build_stage(s, &k, false, key_id(s->h, &k)));
 }
 
 // A fragment stage reads only some of the vertex outputs, and its translation depends on nothing else of the vertex
 // stage (an input the vertex stage doesn't write reads 0): built with every output there (most programs), and once
-// more for each pairing in the files' variations that leaves some of its inputs out.
-static void build_fragment(Stage *s) {
-    ShaderKey k;
-    key_defaults(&k);
-    k.depth_minus_one = 0;  // (draw_shader_keys sets it on the vertex key only)
+// more for each pairing in the files' variations that leaves some of its inputs out. A stage that writes color
+// target 1 is built again with that target unsigned (an integer target in some passes: 20 parts of a new game).
+static void build_fragment_masks(Stage *s, ShaderKey k, bool also_rt1) {
     k.vs_out_mask = ~0u;
-    ShaderInfo *si = build_stage(s, &k, s->nmasks > 0, key_id(s->h, &k));
+    ShaderInfo *si = build_stage(s, &k, true, key_id(s->h, &k));
     uint32_t in = si ? si->attr_mask : 0, seen[8];
+    bool rt1 = si && (si->out_mask & 2);
     int nseen = 0;
     maxwell_free(si);
     for (int i = 0; i < s->nmasks && in; i++) {
@@ -401,6 +407,17 @@ static void build_fragment(Stage *s) {
         k.vs_out_mask = m;  // (the bits it doesn't read don't change it: as a draw with that vertex stage keys it)
         maxwell_free(build_stage(s, &k, false, key_id(s->h, &k)));
     }
+    if (also_rt1 && rt1) {
+        k.rt_kind[1] = 2;
+        build_fragment_masks(s, k, false);
+    }
+}
+
+static void build_fragment(Stage *s) {
+    ShaderKey k;
+    key_defaults(&k);
+    k.depth_minus_one = 0;  // (draw_shader_keys sets it on the vertex key only)
+    build_fragment_masks(s, k, true);
 }
 
 static _Atomic int g_next_stage;

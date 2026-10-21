@@ -26,7 +26,8 @@ HLE_FUNC("_ZN2nn5swkbd12ShowKeyboardEPNS0_6StringERKNS0_15ShowKeyboardArgE", swk
         initial[i] = ch < 0x80 ? (char)ch : '?';
     }
     char text[96];
-    int ok = menu_keyboard_run(initial, max_len, text, sizeof text);
+    const char *auto_text = getenv("LARECOMP_SWKBD_TEXT");  // (tests: this answer, no keyboard on screen)
+    int ok = auto_text ? (snprintf(text, sizeof text, "%s", auto_text), 1) : menu_keyboard_run(initial, max_len, text, sizeof text);
     if (!ok) snprintf(text, sizeof text, "%s", initial);  // cancelled: keep what was there
     LOG("[swkbd] name entry (max %d, initial \"%s\"): %s \"%s\"\n", max_len, initial, ok ? "entered" : "cancelled", text);
     if (ptr && size) {

@@ -92,3 +92,10 @@ Custo esperado (referência OpenSmash): minutos de preparação na primeira exec
   sem compressão (busca de 32 bytes do programa em toda posição dos 13 GB e do executável). Não é o glslc (`subsdk1`:
   nenhuma função dele roda) nem a DLC (`aoc/*.bin` são só a chave; o conteúdo já está no RomFS). Esses ~7%
   compilam uma vez por instalação e ficam no cache. Cidade: estágios de vértice preparados 46 → 50 de 61, 0,86 → 0,78 s.
+- **Jogo novo** (cenário `tests/scenarios/newgame.json`: sem save, A a cada 1,5 s pela introdução e as primeiras
+  cenas, 6 min, nome pelo `LARECOMP_SWKBD_TEXT`; tudo frio): sem preparação 62 quadros > 50 ms (7,75 s); com ela 36
+  (3,98 s). O log `[partmiss]` (toda parte que o driver levou > 20 ms) mostrou que nenhuma falta era de estágio fora
+  dos arquivos, todas de chave: 31 estágios de vértice liam 7/8/11 como float (preparados só inteiros) e 20 de
+  fragmento escreviam o alvo 1 inteiro. Com essas variantes (preparação 4,6 → 6,4 min, 2,0 → 2,7 GB): **10 quadros,
+  2,16 s, dos quais 4 são as capturas do próprio teste**; as travadas de verdade somam ~0,6 s. Sobram partes com o
+  mesmo GLSL que levam 21-28 ms (acertos lentos), em paralelo nos workers.

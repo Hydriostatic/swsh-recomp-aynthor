@@ -35,8 +35,8 @@ the cycle reports.
 - **Shader preparation on the first start**: every shader stage in the game's files (18,587, found in its packs and
   effect files: 97.5% of what a session draws with) is compiled in the background into its own pipeline part
   (graphics pipeline library, now on by default), so a first visit links instead of compiling. As a new install: a
-  wild battle went from 50 frames over 50 ms to 9-12, a town's entry from 3.5-4 s of hitches to 2.2 s (the game's own
-  loads). About 5 minutes on 8 threads (a notice in a corner of the screen shows the progress) and 2 GB of disk;
+  wild battle went from 50 frames over 50 ms to 9-12, a town's entry from 3.5-4 s of hitches to 0.8 s, and the first 6
+  minutes of a new game from 7.75 s to about 0.6 s. About 6 minutes on 8 threads (a notice in a corner of the screen shows the progress) and 3 GB of disk;
   shaders on disk are compressed (zstd).
 
 ### Tools (for developers)
