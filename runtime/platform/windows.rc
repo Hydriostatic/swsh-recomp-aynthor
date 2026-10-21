@@ -13,8 +13,8 @@ BEGIN
   BEGIN
     BLOCK "040904B0"
     BEGIN
-      VALUE "FileDescription", "Let's Go Recomp"
-      VALUE "ProductName", "Let's Go Recomp"
+      VALUE "FileDescription", "SwSh Recomp"
+      VALUE "ProductName", "SwSh Recomp"
       VALUE "OriginalFilename", "lasrecomp.exe"
       VALUE "FileVersion", "0.1"
       VALUE "ProductVersion", "0.1"

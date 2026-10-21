@@ -1,4 +1,4 @@
-// Let's Go Recomp start screen: the game files (picked once, set up and recompiled here: runtime/gamesetup.c), the
+// SwSh Recomp start screen: the game files (picked once, set up and recompiled here: runtime/gamesetup.c), the
 // resolution, fullscreen, anti-aliasing, the translation (mods/, installed from a downloaded file: runtime/mods.c),
 // the keyboard / mouse controls, Play. In English, or in Portuguese when the system's language is (LARECOMP_LANG=en|pt
 // chooses). The choices go to larecomp.ini (settings.c; bind_key_* from runtime/hle/bindings.c).
