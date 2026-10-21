@@ -623,6 +623,7 @@ static struct { uint64_t addr, size, seq; VkSpan span; bool gpu; } gcopy[GCOPY_T
 static uint64_t gcopy_gen;  // bumped to drop every shared copy (guest memory written mid-list)
 static uint64_t stat_gcopy_drops, stat_gcopy_kept;
 static void guest_copy_flush(void) { gcopy_gen++; stat_gcopy_drops++; }
+static void pc_dirty(uint64_t a, uint64_t n);  // (persistent copies, below)
 // The 64 KB pages (hashed into 2^16 bits) that hold the shared copies of the current submission / generation. This thread
 // writes guest memory ~200 times a frame (buffer copies, uniform updates) and the game issues ~500 barriers: dropping every
 // copy each time made the shared copies useless, and a heavy overworld view copied ~31 MB of vertex data a frame.
@@ -642,6 +643,7 @@ static void gcopy_mark(uint64_t a, uint64_t n) {
 }
 // This thread wrote [a, a + n) of guest memory.
 static void guest_copy_written(uint64_t a, uint64_t n) {
+    pc_dirty(a, n);
     if (!gcopy_precise()) { guest_copy_flush(); return; }
     if (gcopy_pages_key != vk_pending_seq() + (gcopy_gen << 40)) return;  // (no copy shared in this submission yet)
     for (uint64_t p = a >> 16, e = (a + (n ? n : 1) - 1) >> 16; p <= e; p++)
@@ -674,6 +676,252 @@ static VkSpan guest_copy(uint64_t addr, uint64_t size) { return guest_copy_pool(
 // Vertex data copied to VRAM, once per start address and submission: every draw of a mesh starts at the same address and wants a
 // prefix of it (up to its largest index), so one copy serves them all. A per-vertex stream is copied whole (its bound range, up to
 // 8 MB) the first time, so that later draws of other parts of the buffer don't copy it again (37 MB a frame became 16).
+// ================================================================== persistent copies (static vertex / index data)
+// The draws' vertex and index data was copied from guest memory into the VRAM ring once per submission: ~20 MB a frame
+// in a town, ~31 MB in a heavy overworld view, most of it meshes that never change. With the guest window under write
+// watch (platform: plat_written_pages), a copy is kept in VRAM across frames and redone only when a page of it was
+// written (by the game, this thread's buffer copies / uniform updates, or a readback landing):
+//  - each list starts with a scan of the watched 2 MB regions; a written page dirties its 64 KB chunk (pc_epoch);
+//  - an entry (start address -> VRAM range, length) is valid while no chunk under it is dirtier than its copy;
+//  - a new copy goes to a new VRAM range (the old one is freed once the GPU is past its last use), written by the
+//    submission's upload buffer, which runs before its draws;
+//  - data rewritten every few frames (CPU-animated meshes, UI) is marked dynamic and goes through the ring as before;
+//  - index data also keeps its largest index, so the index scan runs once per copy instead of once per draw.
+// LARECOMP_PCACHE=0 (or no write watch): the ring copies of before. Budget: LARECOMP_PCACHE_MB (default 1024) of VRAM.
+#define PC_ARENA_SIZE (64ull << 20)
+#define PC_ARENAS 64
+#define PC_TAB (1 << 15)
+#define PC_CHUNKS (1 << 17)
+#define PC_REGIONS 4096
+typedef struct { VkBuffer buf; VmaAllocation mem; VmaVirtualBlock vb; uint64_t size; } PcArena;
+typedef struct {
+    uint64_t addr, len, epoch, checked, last_seq, last_frame;
+    uint64_t off;
+    VmaVirtualAllocation va;
+    int arena;
+    uint64_t mi_len;                    // (index entries: the bytes scanned for max_index, 0: none)
+    uint32_t max_index, restart, isz;   // (... the largest index for this restart value and index size)
+    uint16_t dirt;                      // recent invalidations (dynamic data: decays)
+    uint32_t dyn_until;                 // frame until which it is treated as dynamic
+} PcEnt;
+static PcArena pc_ar[PC_ARENAS];
+static int pc_nar;
+static PcEnt pc_tab[PC_TAB];
+static struct { uint64_t chunk, epoch; } pc_chunk[PC_CHUNKS];  // dirty epoch of the 64 KB chunks under entries
+static uint64_t pc_reg[PC_REGIONS];  // watched 2 MB regions, sorted
+static int pc_nreg;
+static uint64_t pc_epoch = 1;
+static struct { int arena; VmaVirtualAllocation va; uint64_t seq; } pc_retired[8192];
+static int pc_nret;
+static uint64_t pc_budget, pc_used;
+static uint64_t stat_pc_hits, stat_pc_copies, stat_pc_bytes, stat_pc_dyn, stat_pc_scans, stat_pc_scan_ns, stat_pc_dirty;
+static int pc_on = -1;
+
+static bool pc_enabled(void) {
+    if (pc_on < 0) {
+        uint64_t probe;
+        pc_on = (!getenv("LARECOMP_PCACHE") || atoi(getenv("LARECOMP_PCACHE")) != 0) && ring_gpu_enabled() &&
+                plat_written_pages(HEAP_BASE, 4096, &probe, 1) >= 0;
+        pc_budget = (getenv("LARECOMP_PCACHE_MB") ? strtoull(getenv("LARECOMP_PCACHE_MB"), NULL, 10) : 1024) << 20;
+        LOG("[vk] persistent vertex / index copies: %s\n", pc_on ? "on (write watch)" : "off");
+    }
+    return pc_on;
+}
+
+static uint64_t *pc_chunk_slot(uint64_t chunk, bool add) {  // dirty epoch of a 64 KB chunk (NULL: not watched)
+    uint32_t h = (uint32_t)(chunk * 0x9E3779B97F4A7C15ull >> 47);
+    for (int i = 0; i < 64; i++) {
+        uint32_t k = (h + i) & (PC_CHUNKS - 1);
+        if (pc_chunk[k].chunk == chunk + 1) return &pc_chunk[k].epoch;
+        if (!pc_chunk[k].chunk) {
+            if (!add) return NULL;
+            pc_chunk[k].chunk = chunk + 1;
+            pc_chunk[k].epoch = 0;
+            return &pc_chunk[k].epoch;
+        }
+    }
+    return NULL;  // (table crowded: the caller treats it as unknown)
+}
+
+static bool pc_watch(uint64_t a, uint64_t n) {  // register the chunks and regions under [a, a + n)
+    for (uint64_t c = a >> 16, e = (a + n - 1) >> 16; c <= e; c++)
+        if (!pc_chunk_slot(c, true)) return false;
+    for (uint64_t r = a >> 21, e = (a + n - 1) >> 21; r <= e; r++) {
+        int lo = 0, hi = pc_nreg;
+        while (lo < hi) { int m = (lo + hi) / 2; if (pc_reg[m] < r) lo = m + 1; else hi = m; }
+        if (lo < pc_nreg && pc_reg[lo] == r) continue;
+        if (pc_nreg == PC_REGIONS) return false;
+        {   // (a newly watched region: what was written before this point is in the copy about to be made)
+            static uint64_t tmp[512];
+            plat_written_pages(r << 21, 1ull << 21, tmp, 512);
+        }
+        memmove(&pc_reg[lo + 1], &pc_reg[lo], (size_t)(pc_nreg - lo) * sizeof pc_reg[0]);
+        pc_reg[lo] = r;
+        pc_nreg++;
+    }
+    return true;
+}
+
+// [a, a + n) of guest memory was written (this thread, or a scan): copies over it are stale.
+static void pc_dirty(uint64_t a, uint64_t n) {
+    if (pc_on <= 0 || !n) return;
+    uint64_t e = ++pc_epoch;
+    for (uint64_t c = a >> 16, last = (a + n - 1) >> 16; c <= last; c++) {
+        uint64_t *s = pc_chunk_slot(c, false);
+        if (s) *s = e;
+    }
+}
+
+static void pc_free_range(int arena, VmaVirtualAllocation va, uint64_t seq) {
+    if (pc_nret == (int)(sizeof pc_retired / sizeof pc_retired[0])) { vk_wait_seq(submit_seq); }
+    if (pc_nret == (int)(sizeof pc_retired / sizeof pc_retired[0])) {  // (all done now)
+        for (int i = 0; i < pc_nret; i++) vmaVirtualFree(pc_ar[pc_retired[i].arena].vb, pc_retired[i].va);
+        pc_nret = 0;
+    }
+    pc_retired[pc_nret].arena = arena; pc_retired[pc_nret].va = va; pc_retired[pc_nret].seq = seq; pc_nret++;
+}
+
+// Start of a list: what was written since the last scan; finished frees.
+static void pc_scan(void) {
+    if (pc_on <= 0 || !pc_nreg) return;
+    uint64_t t0 = SDL_GetTicksNS();
+    uint64_t e = pc_epoch + 1;
+    bool any = false;
+    for (int i = 0; i < pc_nreg;) {  // contiguous regions in one call
+        int j = i + 1;
+        while (j < pc_nreg && pc_reg[j] == pc_reg[j - 1] + 1 && j - i < 64) j++;
+        uint64_t a = pc_reg[i] << 21, n = (uint64_t)(j - i) << 21;
+        static uint64_t *big;
+        static long bigcap;
+        long cap = (long)(n >> 12);
+        if (cap > bigcap) { free(big); big = malloc((size_t)cap * sizeof *big); bigcap = cap; }
+        long got = plat_written_pages(a, n, big, cap);
+        if (got < 0 || got >= cap) {  // (unknown or too many: the whole span)
+            for (uint64_t c = a >> 16; c < (a + n) >> 16; c++) { uint64_t *s = pc_chunk_slot(c, false); if (s) *s = e; }
+            any = true;
+        } else {
+            for (long k = 0; k < got; k++) {
+                uint64_t *s = pc_chunk_slot(big[k] >> 16, false);
+                if (s) { *s = e; any = true; stat_pc_dirty++; }
+            }
+        }
+        i = j;
+    }
+    if (any) pc_epoch = e;
+    uint64_t done = vk_completed_seq();
+    int m = 0;
+    for (int i = 0; i < pc_nret; i++) {
+        if (pc_retired[i].seq <= done) vmaVirtualFree(pc_ar[pc_retired[i].arena].vb, pc_retired[i].va);
+        else pc_retired[m++] = pc_retired[i];
+    }
+    pc_nret = m;
+    stat_pc_scans++;
+    stat_pc_scan_ns += SDL_GetTicksNS() - t0;
+}
+
+static bool pc_valid(PcEnt *en) {
+    if (en->checked == pc_epoch) return true;
+    for (uint64_t c = en->addr >> 16, e = (en->addr + en->len - 1) >> 16; c <= e; c++) {
+        uint64_t *s = pc_chunk_slot(c, false);
+        if (!s || *s > en->epoch) return false;
+    }
+    en->checked = pc_epoch;
+    return true;
+}
+
+static bool pc_alloc(uint64_t len, int *arena, VmaVirtualAllocation *va, uint64_t *off) {
+    VmaVirtualAllocationCreateInfo ci = {.size = len, .alignment = 256};
+    for (int i = pc_nar - 1; i >= 0; i--)
+        if (vmaVirtualAllocate(pc_ar[i].vb, &ci, va, off) == VK_SUCCESS) { *arena = i; return true; }
+    uint64_t size = len > PC_ARENA_SIZE ? (len + 0xFFFF) & ~0xFFFFull : PC_ARENA_SIZE;
+    if (pc_nar == PC_ARENAS || pc_used + size > pc_budget) return false;
+    PcArena *a = &pc_ar[pc_nar];
+    VkBufferCreateInfo bi = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size,
+                             .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+    VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+    if (vmaCreateBuffer(g_vk.vma, &bi, &ai, &a->buf, &a->mem, NULL) != VK_SUCCESS) return false;
+    VmaVirtualBlockCreateInfo vi = {.size = size};
+    if (vmaCreateVirtualBlock(&vi, &a->vb) != VK_SUCCESS) { vmaDestroyBuffer(g_vk.vma, a->buf, a->mem); return false; }
+    a->size = size;
+    pc_used += size;
+    LOG("[vk] persistent copies: arena %d, %llu MB (%llu MB in all)\n", pc_nar, (unsigned long long)(size >> 20), (unsigned long long)(pc_used >> 20));
+    *arena = pc_nar++;
+    return vmaVirtualAllocate(a->vb, &ci, va, off) == VK_SUCCESS;
+}
+
+// The VRAM copy of [addr, addr + len) (a longer copy of the same start serves too), or {0} for the ring path.
+static VkSpan pc_get(uint64_t addr, uint64_t len, PcEnt **out) {
+    if (out) *out = NULL;
+    if (!pc_enabled() || len < 4096 || addr < HEAP_BASE) return (VkSpan){0};
+    uint32_t h = (uint32_t)((addr >> 4) * 0x9E3779B97F4A7C15ull >> 49), at = PC_TAB;
+    PcEnt *en = NULL;
+    for (int i = 0; i < 16; i++) {
+        uint32_t k = (h + i) & (PC_TAB - 1);
+        if (pc_tab[k].addr == addr) { en = &pc_tab[k]; break; }
+        if (!pc_tab[k].addr && at == PC_TAB) at = k;
+    }
+    uint64_t frame = vk_frame_counter();
+    if (!en) {
+        if (at == PC_TAB) return (VkSpan){0};  // (full here: the ring)
+        en = &pc_tab[at];
+        memset(en, 0, sizeof *en);
+        en->addr = addr;
+        en->arena = -1;
+    }
+    if (en->dyn_until > frame) { stat_pc_dyn++; return (VkSpan){0}; }
+    bool stale = en->arena >= 0 && !pc_valid(en);
+    if (en->arena >= 0 && !stale && en->len >= len) {
+        en->last_seq = vk_pending_seq();
+        en->last_frame = frame;
+        stat_pc_hits++;
+        if (out) *out = en;
+        return (VkSpan){pc_ar[en->arena].buf, en->off, NULL};
+    }
+    // (re)copy: count how often this data changes
+    if (en->arena >= 0) {
+        if (stale) {
+            if (en->last_frame + 8 >= frame) {
+                if (++en->dirt >= 3) { en->dyn_until = (uint32_t)(frame + 600); en->dirt = 0; }
+            } else en->dirt = 0;
+        }
+        pc_free_range(en->arena, en->va, en->last_seq);
+        en->arena = -1;
+        if (en->dyn_until > frame) { stat_pc_dyn++; return (VkSpan){0}; }
+    }
+    if (len < en->len && en->len <= (8ull << 20)) len = en->len;  // (keep the longest prefix seen)
+    if (!pc_watch(addr, len)) return (VkSpan){0};
+    int arena;
+    VmaVirtualAllocation va;
+    uint64_t off;
+    if (!pc_alloc(len, &arena, &va, &off)) return (VkSpan){0};
+    readback_sync_range(addr, len);
+    uint64_t epoch = pc_epoch;
+    VkSpan st = vk_transient_copy((const void *)(uintptr_t)addr, len, 16);
+    VkBufferCopy rg = {st.off, off, len};
+    vkCmdCopyBuffer(vk_upload_cmd(), st.buf, pc_ar[arena].buf, 1, &rg);
+    en->len = len; en->arena = arena; en->va = va; en->off = off; en->epoch = epoch; en->checked = 0;
+    en->mi_len = 0;
+    en->last_seq = vk_pending_seq();
+    en->last_frame = frame;
+    stat_pc_copies++;
+    stat_pc_bytes += len;
+    if (out) *out = en;
+    return (VkSpan){pc_ar[arena].buf, off, NULL};
+}
+
+static void pc_reset(void) {  // (reboot: guest memory is replaced)
+    if (pc_on <= 0) return;
+    vk_wait_seq(submit_seq);
+    for (int i = 0; i < pc_nar; i++) {
+        vmaClearVirtualBlock(pc_ar[i].vb);
+        vmaDestroyVirtualBlock(pc_ar[i].vb);
+        vmaDestroyBuffer(g_vk.vma, pc_ar[i].buf, pc_ar[i].mem);
+    }
+    pc_nar = 0; pc_used = 0; pc_nret = 0; pc_nreg = 0;
+    memset(pc_tab, 0, sizeof pc_tab);
+    memset(pc_chunk, 0, sizeof pc_chunk);
+}
+
 #define VCOPY_TAB 1024
 static struct { uint64_t addr, len, seq; VkSpan span; } vcopy[VCOPY_TAB];
 static VkSpan vertex_copy(uint64_t addr, uint64_t need, uint64_t bound, bool per_vertex) {
@@ -691,7 +939,12 @@ static VkSpan vertex_copy(uint64_t addr, uint64_t need, uint64_t bound, bool per
     }
 copy:;
     uint64_t len = per_vertex && bound <= (8ull << 20) && bound > need ? bound : need;
-    VkSpan sp = transient_gpu_copy((const void *)(uintptr_t)addr, len, 256);
+    VkSpan sp = pc_get(addr, len, NULL);
+    if (sp.buf) {
+        vcopy[at].addr = addr; vcopy[at].len = len; vcopy[at].seq = seq; vcopy[at].span = sp;
+        return sp;
+    }
+    sp = transient_gpu_copy((const void *)(uintptr_t)addr, len, 256);
     vcopy[at].addr = addr; vcopy[at].len = len; vcopy[at].seq = seq; vcopy[at].span = sp;
     gcopy_mark(addr, len);
     return sp;
@@ -947,6 +1200,13 @@ const char *renderer_stats(void) {
         snprintf(stats_text + n, sizeof stats_text - n, " | buffer copies %llu flushed, %llu inline", (unsigned long long)stat_copy_flushed,
                  (unsigned long long)stat_copy_inline);
         stat_copy_flushed = stat_copy_inline = 0;
+    }
+    if (stat_pc_hits || stat_pc_copies || stat_pc_dyn) {
+        size_t n = strlen(stats_text);
+        snprintf(stats_text + n, sizeof stats_text - n, " | persistent copies %llu hits, %llu copied (%.1f MB), %llu dynamic, %llu scans %.1f ms, %llu dirty pages, %llu MB VRAM",
+                 (unsigned long long)stat_pc_hits, (unsigned long long)stat_pc_copies, stat_pc_bytes / 1048576.0, (unsigned long long)stat_pc_dyn,
+                 (unsigned long long)stat_pc_scans, stat_pc_scan_ns / 1e6, (unsigned long long)stat_pc_dirty, (unsigned long long)(pc_used >> 20));
+        stat_pc_hits = stat_pc_copies = stat_pc_bytes = stat_pc_dyn = stat_pc_scans = stat_pc_scan_ns = stat_pc_dirty = 0;
     }
     if (stat_gcopy_drops || stat_gcopy_kept) {
         size_t n = strlen(stats_text);
@@ -2392,6 +2652,7 @@ void vk_gmem_prepare(void) {
 static struct { uint64_t a, e; } gpuw[512];
 static int ngpuw;
 static void gpuw_note(uint64_t a, uint64_t n) {
+    pc_dirty(a, n ? n : 16);  // (the GPU writes it: a VRAM copy of it is stale; it is read in place from now on)
     uint64_t e = a + (n ? n : 16);
     int i = 0, j;
     while (i < ngpuw && gpuw[i].e < a) i++;
@@ -2531,6 +2792,7 @@ void vk_exec_reset(void) {
     g_cs_n = 0;
     ngpuw = 0;  // (guest memory is replaced)
     gcopy_gen++;
+    pc_reset();
     if (gmem_buf) {
         vkDestroyBuffer(g_vk.dev, gmem_buf, NULL);
         vkFreeMemory(g_vk.dev, gmem_mem, NULL);
@@ -3474,8 +3736,19 @@ static void draw_(CmdRec *r, bool indexed) {
             if (iaddr % isz == 0 && vtx_direct(iaddr, (uint64_t)count * isz, &ib.buf, &ib.off)) {
                 scan_src = src; scan_isz = isz; scan_restart = restart;  // max_index only if a stream gets copied
             } else {
-                ib = transient_gpu_copy(src, (uint64_t)count * isz + 4, 4);
-                { uint32_t m = scan_max_index(src, isz, count, restart); if (m > max_index) max_index = m; }
+                PcEnt *pe;
+                uint64_t ilen = (uint64_t)count * isz;
+                ib = iaddr % 4 == 0 ? pc_get(iaddr, ilen + 4, &pe) : (VkSpan){0};
+                if (ib.buf) {  // (persistent copy: its largest index too)
+                    if (!(pe->mi_len == ilen && pe->isz == isz && pe->restart == restart)) {
+                        pe->max_index = scan_max_index(src, isz, count, restart);
+                        pe->mi_len = ilen; pe->isz = isz; pe->restart = restart;
+                    }
+                    if (pe->max_index > max_index) max_index = pe->max_index;
+                } else {
+                    ib = transient_gpu_copy(src, ilen + 4, 4);
+                    { uint32_t m = scan_max_index(src, isz, count, restart); if (m > max_index) max_index = m; }
+                }
             }
         } else if (native) {  // 8-bit indices: widen to 16
             ib = vk_transient((uint64_t)count * 2 + 4, 4);
@@ -4291,6 +4564,7 @@ static void exec_list(uint64_t handle, int depth) {
     if (depth == 0) {
         sh_pump();
         recipes_pump();
+        pc_scan();
         if (g_nrb) {  // (deferred readbacks the GPU has finished)
             uint64_t done = 0;
             vkGetSemaphoreCounterValue(g_vk.dev, g_vk.timeline, &done);

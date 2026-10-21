@@ -74,6 +74,8 @@ void plat_thread_realtime(uint64_t period_ns) {
     setpriority(PRIO_PROCESS, (id_t)gettid(), -10);  // (per thread on Linux; fails quietly without CAP_SYS_NICE)
 }
 
+long plat_written_pages(uint64_t addr, uint64_t size, uint64_t *out, long max) { (void)addr; (void)size; (void)out; (void)max; return -1; }
+
 void plat_thread_background(void) { setpriority(PRIO_PROCESS, (id_t)gettid(), 5); }
 
 // ---- process

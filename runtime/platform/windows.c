@@ -43,13 +43,31 @@ static LONG CALLBACK vectored_handler(EXCEPTION_POINTERS *ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// Write watch (MEM_WRITE_WATCH): the system records which pages of the guest window are written, by the game, the
+// runtime or the OS; the renderer keeps copies of static vertex / index data in VRAM and re-sends only what changed
+// (exec.c). LARECOMP_WRITE_WATCH=0: no tracking (every copy is redone, as before).
+static bool g_write_watch;
 bool plat_reserve_guest(uint64_t lo, uint64_t hi) {
-    void *p = VirtualAlloc((void *)(uintptr_t)lo, hi - lo, MEM_RESERVE, PAGE_READWRITE);
+    const char *ww = getenv("LARECOMP_WRITE_WATCH");
+    g_write_watch = !ww || atoi(ww) != 0;
+    void *p = VirtualAlloc((void *)(uintptr_t)lo, hi - lo, MEM_RESERVE | (g_write_watch ? MEM_WRITE_WATCH : 0), PAGE_READWRITE);
+    if (!p && g_write_watch) {  // (no write watch here: reserve without it)
+        g_write_watch = false;
+        p = VirtualAlloc((void *)(uintptr_t)lo, hi - lo, MEM_RESERVE, PAGE_READWRITE);
+    }
     if (p != (void *)(uintptr_t)lo) return false;
     g_lo = lo;
     g_hi = hi;
     AddVectoredExceptionHandler(1, vectored_handler);
     return true;
+}
+
+long plat_written_pages(uint64_t addr, uint64_t size, uint64_t *out, long max) {
+    if (!g_write_watch || addr < g_lo || addr + size > g_hi) return -1;
+    ULONG_PTR n = (ULONG_PTR)max;
+    ULONG gran;
+    if (GetWriteWatch(WRITE_WATCH_FLAG_RESET, (void *)(uintptr_t)addr, (SIZE_T)size, (PVOID *)out, &n, &gran)) return max;
+    return (long)n;
 }
 
 void *plat_reserve_lazy(uint64_t size) {
