@@ -86,3 +86,9 @@ Custo esperado (referência OpenSmash): minutos de preparação na primeira exec
   para 2 threads em prioridade ociosa. Mesma cache preparada: cidade 2,2 → 0,86 s (pior quadro 1.423 → 664 ms), mundo
   aberto 1,5 → 1,05 s, batalha 2,1-2,5 → 2,0 s (pior 731 → 522 ms; os 522 ms são o carregamento da batalha). E uma
   preparação concluída não roda de novo (`shader_prep_complete`): antes, toda abertura relia e retraduzia tudo (38 s).
+- **De onde vêm os estágios que faltavam** (`LARECOMP_DUMP_STAGES` em cidade + batalha + mundo aberto: 581 estágios
+  distintos, 67 fora do inventário): 14 estão no executável (`exefs/main`, contêineres BNSH 2.1.11; agora a
+  preparação varre os módulos carregados: +37 estágios, 18.624 no total); os outros ~35 não existem em nenhum arquivo
+  sem compressão (busca de 32 bytes do programa em toda posição dos 13 GB e do executável). Não é o glslc (`subsdk1`:
+  nenhuma função dele roda) nem a DLC (`aoc/*.bin` são só a chave; o conteúdo já está no RomFS). Esses ~7%
+  compilam uma vez por instalação e ficam no cache. Cidade: estágios de vértice preparados 46 → 50 de 61, 0,86 → 0,78 s.

@@ -2009,6 +2009,35 @@ static uint64_t stage_hash_rt(const NvnShaderStage *ss) {
     for (uint32_t k = 0; k < ss->code_size; k++) h = (h ^ b[k]) * 0x100000001B3ull;
     if (!h) h = 1;
     stat_sh_hashed++;
+    static const char *dump = (const char *)1;  // LARECOMP_DUMP_STAGES=<dir>: each stage drawn, once (tools/swsh/shader_store.py)
+    if (dump == (const char *)1) dump = getenv("LARECOMP_DUMP_STAGES");
+    if (dump) {
+        char path[700];
+        snprintf(path, sizeof path, "%s/%016llx_%llx.code", dump, (unsigned long long)h, (unsigned long long)ss->code_addr);
+        FILE *f = fopen(path, "rb");
+        if (f) fclose(f);
+        else if ((f = fopen(path, "wb"))) {
+            fwrite(b, 1, ss->code_size, f);
+            fclose(f);
+            // (research: the container the code sits in, if it is in guest memory: the nearest "BNSH" before it, and
+            // the 256 bytes in front of that, in <hash>.ctx)
+            uint64_t lo = HEAP_BASE, hi = HEAP_BASE + kernel_heap_size(), a = ss->code_addr & ~7ull;
+            if (a >= lo && a < hi) {
+                uint64_t stop = a - lo > (32u << 20) ? a - (32u << 20) : lo;
+                for (uint64_t p = a; p >= stop + 8; p -= 8)
+                    if (!memcmp((const void *)(uintptr_t)p, "BNSH\0\0\0\0", 8)) {
+                        snprintf(path, sizeof path, "%s/%016llx.ctx", dump, (unsigned long long)h);
+                        if ((f = fopen(path, "wb"))) {
+                            uint64_t from = p - lo >= 256 ? p - 256 : lo;
+                            fprintf(f, "%llx %llx\n", (unsigned long long)p, (unsigned long long)(a - p));
+                            fwrite((const void *)(uintptr_t)from, 1, (size_t)(p + 0x40 - from), f);
+                            fclose(f);
+                        }
+                        break;
+                    }
+            }
+        }
+    }
     if (s >= 0) {
         g_sh_tab[s].addr = ss->code_addr, g_sh_tab[s].hash = h, g_sh_tab[s].size = ss->code_size;
         sh_pages_note(ss->code_addr, ss->code_size, +1);

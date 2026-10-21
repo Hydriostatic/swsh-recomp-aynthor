@@ -173,8 +173,9 @@ mediram estão em `reports/cycles/` e em [docs/engineering](engineering/README.m
 | `LARECOMP_GPL=0` | sem os pipelines ligados a partir de partes (graphics pipeline library, ligada por padrão onde o driver liga rápido); sem eles também não há preparação |
 | `LARECOMP_SHADER_PREP=0` / `=<n>` | sem a preparação dos shaders (`runtime/nvn/vulkan/prep.c`: na primeira abertura, todo estágio dos arquivos do jogo vira uma parte de pipeline em segundo plano, ~5 min em 8 threads; `[prep]` no log) / com n threads. Os cenários (`tools/swsh/scenario.py`) a desligam, menos o `prep` |
 | `LARECOMP_SHADER_PREP_EXIT=1` | fecha o jogo quando a preparação termina (o cenário `prep`: primeira abertura de uma instalação nova; a rodada seguinte com a mesma `LARECOMP_CACHE_DIR` e o mesmo nonce joga) |
+| `LARECOMP_DUMP_STAGES=<pasta>` | grava cada estágio de shader desenhado (`<hash>_<endereço>.code`) e, se estiver dentro de um BNSH na memória, o contêiner em volta (`<hash>.ctx`): para achar estágios que a preparação não cobre |
 | `LARECOMP_PREP_DEBUG=1` | `[prepdbg]`: o hash do GLSL de cada estágio preparado e de cada programa traduzido num draw (as chaves da preparação precisam bater com as do jogo) |
-| `python tools/swsh/shader_store.py inventory <romfs> ... --out <pasta>` / `coverage <pasta> <pipeline_recipes>` | os estágios de shader dos arquivos do jogo, e quantos dos de uma sessão real eles cobrem (97,5% no Sword) |
+| `python tools/swsh/shader_store.py inventory <romfs> <exefs> [<imagem romfs .bin>] ... --out <pasta>` / `coverage <pasta> <pipeline_recipes>` | os estágios de shader dos arquivos do jogo, e quantos dos de uma sessão real eles cobrem (97,5% no Sword) |
 | `LARECOMP_WORKER_BG=0` | as threads de compilação na prioridade normal (padrão: abaixo do jogo) |
 | `LARECOMP_GMEM_EARLY=0` | a memória do jogo vista pela GPU importada no primeiro draw que a usa, não no boot |
 | `LARECOMP_PCACHE=0`, `LARECOMP_PCACHE_MB=<n>` (1024) | sem as cópias persistentes de vértices / índices na VRAM; o teto delas |

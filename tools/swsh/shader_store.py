@@ -79,10 +79,8 @@ def bnsh_programs(d, base):
     return out
 
 
-def buffers(path):
-    """(label, bytes) of the file, or of each entry of a .gfpak."""
-    with open(path, 'rb') as f:
-        d = f.read()
+def expand(path, d):
+    """(label, bytes) of a file's data, or of each entry of a .gfpak."""
     if d[:8] != b'GFLXPACK':
         yield path, d
         return
@@ -97,20 +95,75 @@ def buffers(path):
         yield f'{path}#{i}', raw
 
 
+def buffers(path):
+    with open(path, 'rb') as f:
+        yield from expand(path, f.read())
+
+
+def romfs_image(path):
+    """The files of a RomFS image (the setup's romfs.bin, the DLC's aoc/<data id>.bin), by name; [] if it isn't one."""
+    with open(path, 'rb') as f:
+        h = struct.unpack('<10Q', f.read(0x50))
+        if h[0] != 0x50:
+            return
+        f.seek(h[7])
+        meta = f.read(h[8])
+        o = 0
+        while o + 0x20 <= len(meta):
+            off, size = u64(meta, o + 8), u64(meta, o + 0x10)
+            nl = u32(meta, o + 0x1C)
+            name = meta[o + 0x20:o + 0x20 + nl].decode('utf-8', 'replace')
+            o += 0x20 + ((nl + 3) & ~3)
+            if size > 512 * 1024 * 1024:
+                continue
+            f.seek(h[9] + off)
+            yield from expand(f'{os.path.basename(path)}:{name}', f.read(size))
+
+
+def nso(path):
+    """The executable's segments (text, rodata, data), decompressed: the game keeps some shaders in it."""
+    with open(path, 'rb') as f:
+        d = f.read()
+    if d[:4] != b'NSO0':
+        return d
+    flags, segs = u32(d, 0xC), []
+    for k in range(3):
+        foff, moff, size = struct.unpack_from('<III', d, 0x10 + k * 0x10)
+        raw = d[foff:foff + u32(d, 0x60 + k * 4)]
+        segs.append((moff, lz4.block.decompress(raw, uncompressed_size=size) if flags & (1 << k) else raw))
+    out = bytearray(max(m + len(b) for m, b in segs))  # (as loaded: each segment at its offset in memory)
+    for m, b in segs:
+        out[m:m + len(b)] = b
+    return bytes(out)
+
+
+def sources(roots):
+    """Every buffer to scan: files under a directory (an exefs directory: its executables), or a RomFS image."""
+    for root in roots:
+        if os.path.isfile(root):
+            yield from romfs_image(root)
+            continue
+        exefs = os.path.basename(os.path.normpath(root)) == 'exefs'
+        for dp, _, names in os.walk(root):
+            for name in names:
+                path = os.path.join(dp, name)
+                if exefs:
+                    yield os.path.relpath(path, os.path.dirname(root)), nso(path)
+                elif os.path.getsize(path) <= 512 * 1024 * 1024:
+                    yield from (( os.path.relpath(lab, root), d) for lab, d in buffers(path))
+
+
 def inventory(dirs, out):
     os.makedirs(os.path.join(out, 'stages'), exist_ok=True)
     seen = {}  # fnv -> [stage, bytes, first label, count]
     by_bytes = {}  # code bytes -> fnv (hash each distinct block once)
     progs = set()
     nfiles = ncont = 0
-    for root in dirs:
-        for dp, _, names in os.walk(root):
-            for name in names:
-                path = os.path.join(dp, name)
-                if os.path.getsize(path) > 512 * 1024 * 1024:
-                    continue
-                nfiles += 1
-                for label, d in buffers(path):
+    if True:
+        if True:
+            if True:
+                for label, d in sources(dirs):
+                    nfiles += 1
                     i = d.find(SIG)
                     while i != -1:
                         ps = bnsh_programs(d, i)
@@ -124,7 +177,7 @@ def inventory(dirs, out):
                                 if h in seen:
                                     seen[h][3] += 1
                                 else:
-                                    seen[h] = [kind, len(code), os.path.relpath(label, root), 1]
+                                    seen[h] = [kind, len(code), label, 1]
                                     with open(os.path.join(out, 'stages', f'{h:016x}.code'), 'wb') as f:
                                         f.write(code)
                                     with open(os.path.join(out, 'stages', f'{h:016x}.ctrl'), 'wb') as f:

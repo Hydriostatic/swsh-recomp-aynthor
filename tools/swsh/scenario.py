@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stats import frame_stats, parse_log  # noqa: E402
 
 PROFILES = {  # render height, fps option
-    "1440p30": (1440, 30), "1440p60": (1440, 60), "1080p30": (1080, 30), "1080p60": (1080, 60), "720p30": (720, 30),
+    "1440p30": (1440, 30), "1440p60": (1440, 60), "1080p30": (1080, 30), "1080p60": (1080, 60), "720p30": (720, 30), "720p60": (720, 60),
 }
 MSYS = r"C:\msys64\ucrt64\bin"
 

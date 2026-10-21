@@ -10,7 +10,7 @@
 // vk_prep_part), so the draw only links (~0.01 ms) instead of waiting for the driver (20-120 ms, up to 2.5 s).
 //
 // When the game opens its RomFS (services/fs.c) the candidate files are listed; threads at idle priority then
-//  1. read them and collect every distinct stage (FNV-1a of the code block, the runtime's own id: exec.c
+//  1. read them (and the game's executables, which hold a few) and collect every distinct stage (FNV-1a of the code block, the runtime's own id: exec.c
 //     stage_hash_rt) and every vertex + fragment pair of a variation;
 //  2. every vertex stage: translated with the keys a draw of this game uses (below), compiled to SPIR-V (the same
 //     disk cache the draws use) and its part built; then every fragment stage, keyed by the vertex outputs it may get
@@ -235,7 +235,8 @@ static void done_path(char *out, size_t n) { snprintf(out, n, "%s/shader_prep.bi
 // cache/shader_prep_complete: one u64, this build + GPU + driver (g_epoch) mixed with the files scanned. A start that
 // finds it skips the preparation; without it every start read and translated all 18k stages again (38 s of CPU) to
 // learn that every part was done.
-static uint64_t complete_id(void) { return (g_epoch ^ (uint64_t)g_nfiles * 0x9E3779B97F4A7C15ull ^ g_bytes * 31) | 1; }
+#define PREP_VERSION 2  // (what the preparation covers: 2 = the executables' shaders too)
+static uint64_t complete_id(void) { return (g_epoch ^ (uint64_t)g_nfiles * 0x9E3779B97F4A7C15ull ^ g_bytes * 31 ^ PREP_VERSION * 0x51ED27ull) | 1; }
 
 static bool complete_check(void) {
     char path[600];
@@ -412,6 +413,12 @@ static void *prep_thread(void *a) {
     (void)a;
     plat_thread_idle();
     if (g_phase_stage < 0) {  // (scan)
+        // The executables too, as loaded: the game keeps shaders of its own in main (BNSH 2.1.11 containers, 14
+        // of the stages a town and a battle drew that no file has). One thread takes them.
+        static _Atomic int modules_taken;
+        if (!atomic_exchange(&modules_taken, 1))
+            for (int m = 0; m < g_nmodules; m++)
+                if (g_modules[m].base && g_modules[m].size) scan_buffer((const uint8_t *)(uintptr_t)g_modules[m].base, g_modules[m].size);
         int nf;
         while ((nf = atomic_fetch_add(&g_next_file, 1)) < g_nfiles) { scan_file(&g_files[nf]); atomic_fetch_add(&g_files_done, 1); }
         return NULL;
