@@ -219,7 +219,7 @@ void settings_save(void) {
     fprintf(f, "smaa = %d\n", g_settings.antialias != AA_OFF);
     fprintf(f, "aa = %s\n", g_settings.antialias == AA_FSR3 ? "fsr3" : g_settings.antialias == AA_TAA ? "taa" :
                             g_settings.antialias == AA_SMAA ? "smaa" : "off");
-    fprintf(f, "upscaler = bilinear\n");  // (FSR 3.1: "aa"; for older versions)
+    fprintf(f, "upscaler = fsr1\n");  // (SwSh Recomp: always FSR 1, settings_apply_levels; for older versions)
     fprintf(f, "taa_sharpness = %.2f\n", g_settings.taa_sharpness);
     fprintf(f, "fsr3_sharpness = %.2f\n", g_settings.fsr3_sharpness);
     static const char *const presets[] = {"native", "quality", "balanced", "performance", "ultra"};

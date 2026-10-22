@@ -85,10 +85,11 @@ this port has:
 2. Open **`SwShRecomp.exe`** (if Windows warns, **More info** → **Run anyway**).
 3. Click **Select game folder...** and pick the folder with your extracted game (`exefs` and `romfs`).
 4. Wait while it copies the files and recompiles the game for your PC. This happens only once and takes a while
-   (about 20 minutes for the game code on a 20-thread CPU, longer with fewer threads).
+   (about 40 minutes on a 20-thread CPU, measured on a fresh install; longer with fewer threads).
 5. Click **Play**.
 
-Everything stays in that folder (settings in `larecomp.ini`, saves, shader caches, the log `lasrecomp.log`). To
+Everything stays in that folder (settings in `larecomp.ini`, saves in `save-sword` / `save-shield`, shader caches, the
+log `lasrecomp.log`). To
 update, unzip a new release over it.
 
 **On the first start** the game's shaders are prepared for your GPU in the background (about 6 minutes on an 8-core
@@ -103,6 +104,7 @@ links what was prepared; what isn't in the game files is still compiled when fir
 - The Expansion Pass is not set up by the launcher yet: each DLC's RomFS has to be packed by hand into
   `extracted/aoc/<data id>.bin` ([docs/DIAGNOSTICO-SWSH.md](docs/DIAGNOSTICO-SWSH.md))
 - Memory use grows slowly over long sessions (being investigated)
+- Only tested on an NVIDIA GPU (RTX 3080): AMD, Intel and integrated GPUs are not tested yet; reports are welcome
 - Online features (raids with other players, trades, Y-Comm) are not supported
 
 Crashes: please open an issue with `lasrecomp.log` ([CONTRIBUTING.md](CONTRIBUTING.md)). What changed in each

@@ -27,7 +27,7 @@ How to play
 3. Click "Select game folder..." and pick the folder with your extracted game (the one that holds exefs and romfs,
    or any folder above it).
 4. Wait while the game files are copied and the game code is recompiled for your PC. This happens only once and
-   takes a while (about 20 minutes for the game code on a 20-thread CPU, longer with fewer threads).
+   takes a while (about 40 minutes on a 20-thread CPU, longer with fewer threads).
 5. Click Play.
 
 On the first start the game's shaders are prepared for your graphics card in the background (about 6 minutes; the
@@ -37,7 +37,8 @@ Options (start screen, and F12 in the game): resolution, fullscreen, 30 / 60 fps
 contrast, saturation, volume, the controller layout (Nintendo / Xbox), the keys, and mods (several at once). More in
 larecomp.ini.
 
-Everything stays in this folder: settings (larecomp.ini), saves (save\), the game files (extracted\), shader caches
+Everything stays in this folder: settings (larecomp.ini), saves (save-sword\ or save-shield\), the game files
+(extracted\), shader caches
 (cache\) and the log (lasrecomp.log). To move or back up the game, move or copy the whole folder.
 
 Expansion Pass (optional)

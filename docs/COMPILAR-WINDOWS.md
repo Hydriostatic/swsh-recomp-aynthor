@@ -81,7 +81,7 @@ make gen
 make -j20
 ```
 
-Isso gera também `build/lasgame.dll` (o código do jogo), em uns 20 minutos numa CPU de 20 threads (mais com menos threads).
+Isso gera também `build/lasgame.dll` (o código do jogo), em uns 20 minutos numa CPU de 20 threads com o clang do MSYS2 (mais com menos threads; a release, que compila com o Zig, levou 40 minutos na mesma CPU).
 
 ## 5. Jogar
 
@@ -89,7 +89,7 @@ Isso gera também `build/lasgame.dll` (o código do jogo), em uns 20 minutos num
 ./build/lasrecomp.exe
 ```
 
-- Os saves ficam em `save/`, as configurações em `larecomp.ini` e os caches de shader em `cache/`, tudo na pasta do
+- Os saves ficam em `save-sword/` (ou `save-shield/`), as configurações em `larecomp.ini` e os caches de shader em `cache/`, tudo na pasta do
   projeto.
 - `--play` pula o launcher: `./build/lasrecomp.exe extracted --play`.
 - `make jogo` monta em `build/jogo/` uma cópia que abre com dois cliques (traz as DLLs do MSYS2) e deixa recompilar

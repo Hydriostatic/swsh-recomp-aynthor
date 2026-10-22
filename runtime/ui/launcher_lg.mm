@@ -160,8 +160,8 @@ static void game_files_section(SDL_Window *win) {
                                          "Recompilando o código do jogo...", "Finalizando..."};
         ImGui::TextUnformatted(st >= 1 && st <= 6 ? T(en[st], pt[st]) : "...");
         ImGui::ProgressBar(setup_progress(), ImVec2(-FLT_MIN, 0));
-        ImGui::TextDisabled("%s", T("This takes a while (about 30 minutes), only once. The game can be played when it's done.",
-                                    "Isso demora (uns 30 minutos), só uma vez. O jogo fica liberado quando terminar."));
+        ImGui::TextDisabled("%s", T("This takes a while (about 40 minutes), only once. The game can be played when it's done.",
+                                    "Isso demora (uns 40 minutos), só uma vez. O jogo fica liberado quando terminar."));
         return;
     }
     bool ready = setup_ready();
