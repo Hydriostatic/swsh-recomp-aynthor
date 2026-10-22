@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-22, preview)
 
 The first version of the port for *Pokémon Sword* / *Shield*, forked from
 [Let's Go Recomp](https://github.com/raulzrrs/letsgo-recomp) 0.3.1 (its changes up to that version are in its own
