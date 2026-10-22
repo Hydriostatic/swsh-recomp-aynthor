@@ -33,8 +33,9 @@ How to play
 On the first start the game's shaders are prepared for your graphics card in the background (about 6 minutes; the
 game runs slower meanwhile). After that, new places hitch much less. They are kept on disk (cache\, about 3 GB).
 
-Options (start screen): resolution, fullscreen, anti-aliasing (SMAA), and 60 fps for the whole game (experimental).
-More in larecomp.ini.
+Options (start screen, and F12 in the game): resolution, fullscreen, 30 / 60 fps, anti-aliasing (SMAA), brightness,
+contrast, saturation, volume, the controller layout (Nintendo / Xbox), the keys, and mods (several at once). More in
+larecomp.ini.
 
 Everything stays in this folder: settings (larecomp.ini), saves (save\), the game files (extracted\), shader caches
 (cache\) and the log (lasrecomp.log). To move or back up the game, move or copy the whole folder.

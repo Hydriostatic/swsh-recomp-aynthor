@@ -35,14 +35,31 @@ Switch (system services, NVN graphics on Vulkan, audio, controllers). **It is no
   fullscreen
 - **SMAA** anti-aliasing, **16x** anisotropic filtering, **FSR 1** to render below the window size
 - The game's **30 fps**, or **60 fps** for the whole game (like the community's 60 fps patch; experimental)
-- Keyboard and any controller
+- Keyboard and any controller (Nintendo or Xbox button layout), keys rebindable
+- Brightness, contrast and saturation; several **mods** at once (romfs, as LayeredFS: translations, textures)
 - The **Expansion Pass** (The Isle of Armor, The Crown Tundra) from your own DLC data
 - Every shader of the game prepared for your GPU on the first start, then kept on disk; the vertex data of static models
   kept in video memory
 
 Measured on a Core i5-14600KF with an RTX 3080 at 2560x1440 (the reports are in
-[docs/engineering](docs/engineering/README.md)): the open world and towns hold **60 fps** once their shaders are built;
-without the frame cap, about 90 to 120 fps.
+[docs/engineering](docs/engineering/README.md)): the open world and towns hold **60 fps** once their shaders are built,
+with room to spare (75-100 fps when measured without the cap; the game itself runs at 30 or 60, its speed is tied to
+the frame rate).
+
+## Launcher
+
+The start screen and the in-game settings (**F12**) are Let's Go Recomp 0.6.0's, in Sword's colours, with the options
+this port has:
+
+<table>
+<tr>
+<td><img src="docs/images/launcher-game.png" alt="Game page"></td>
+<td><img src="docs/images/launcher-graphics.png" alt="Graphics page"></td>
+<td><img src="docs/images/launcher-image.png" alt="Image and sound page"></td>
+</tr>
+</table>
+
+![The F12 settings in the game](docs/images/f12-menu.png)
 
 ## Requirements
 
@@ -103,7 +120,8 @@ known issues, the study of how other Switch recomp ports handle shaders); how ea
 
 - **[LAS Recomp](https://github.com/peiikai/LASRecomp)** by **Peiikai**: the recompiler and runtime this port is
   built on
-- **[Let's Go Recomp](https://github.com/raulzrrs/letsgo-recomp)**: the Pokémon port this one was forked from
+- **[Let's Go Recomp](https://github.com/raulzrrs/letsgo-recomp)**: the Pokémon port this one was forked from, and its
+  0.6.0 launcher and F12 menu (the F12 menu by **Iván Serrano, [@Vancete](https://github.com/Vancete)**)
 - Techniques studied in the other Switch recomp projects (OpenSmash, mk8-recomp, SuperMarioWonderRecomp, SkyRecomp,
   WindowSmash, HWDER, EoWRecomp): see [docs/engineering](docs/engineering/recomp-project-comparison.md)
 - Libraries: SDL 3, FFmpeg (LGPL), Dear ImGui, Vulkan Memory Allocator, shaderc, SMAA, AMD FidelityFX FSR 1, the

@@ -1,28 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- SwSh Recomp (from Let's Go Recomp): a Master Ball -->
+  <!-- SwSh Recomp: a ball in Sword's blue with a sword on it (drawn here; nothing of the game's) -->
   <defs>
     <radialGradient id="top" cx="0.38" cy="0.3" r="0.75">
-      <stop offset="0" stop-color="#9a5ad0"/>
-      <stop offset="1" stop-color="#5b2385"/>
+      <stop offset="0" stop-color="#4bb4ff"/>
+      <stop offset="1" stop-color="#0b4aa8"/>
     </radialGradient>
     <radialGradient id="bottom" cx="0.38" cy="0.2" r="0.9">
       <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#cfcfd8"/>
+      <stop offset="1" stop-color="#cfd6e2"/>
     </radialGradient>
+    <linearGradient id="blade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#d9ecff"/>
+      <stop offset="1" stop-color="#d9ecff"/>
+    </linearGradient>
     <clipPath id="ball"><circle cx="512" cy="512" r="440"/></clipPath>
   </defs>
   <g clip-path="url(#ball)">
     <rect x="0" y="0" width="1024" height="512" fill="url(#top)"/>
     <rect x="0" y="512" width="1024" height="512" fill="url(#bottom)"/>
-    <circle cx="250" cy="330" r="92" fill="#e2589f"/>
-    <circle cx="774" cy="330" r="92" fill="#e2589f"/>
-    <path transform="translate(0 -58)" d="M395 420 L395 210 L452 210 L512 300 L572 210 L629 210 L629 420 L578 420 L578 300 L524 380 L500 380 L446 300 L446 420 Z"
-          fill="#ffffff"/>
+    <!-- the sword, point up, its guard over the band -->
+    <path d="M512 104 L552 168 L552 382 L472 382 L472 168 Z" fill="url(#blade)"/>
+    <path d="M512 104 L552 168 L552 382" fill="none" stroke="#0a3d8c" stroke-width="10" stroke-linejoin="round" opacity="0.35"/>
+    <rect x="388" y="382" width="248" height="40" rx="20" fill="#ffc83a"/>
+    <rect x="490" y="422" width="44" height="60" fill="#ffffff"/>
     <rect x="0" y="482" width="1024" height="60" fill="#1c1c22"/>
   </g>
   <circle cx="512" cy="512" r="440" fill="none" stroke="#1c1c22" stroke-width="34"/>
   <circle cx="512" cy="512" r="128" fill="#1c1c22"/>
   <circle cx="512" cy="512" r="92" fill="#ffffff"/>
   <circle cx="512" cy="512" r="58" fill="none" stroke="#d6d6de" stroke-width="10"/>
-  <ellipse cx="380" cy="190" rx="110" ry="50" fill="#ffffff" opacity="0.18" transform="rotate(-25 380 190)"/>
+  <ellipse cx="330" cy="200" rx="110" ry="50" fill="#ffffff" opacity="0.20" transform="rotate(-25 330 200)"/>
 </svg>

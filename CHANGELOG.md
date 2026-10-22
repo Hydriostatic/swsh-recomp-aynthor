@@ -16,6 +16,13 @@ the cycle reports.
 - **The 1.3.2 update and the Expansion Pass**: add-on content is read from `<data root>/aoc/<data id>.bin`.
 - **60 fps** for the whole game, an option for 1.0.0 and 1.3.2 (`fps = 60`).
 
+### Launcher and settings
+- **Let's Go Recomp 0.6.0's start screen and F12 menu**, in Sword's colours and with a new icon: a launcher window with
+  pages (Game, Graphics, Image and sound, Controls, Mods), the same graphics and image pages in game on F12. Options:
+  resolution, fullscreen, 30 / 60 fps, SMAA, brightness / contrast / saturation (a new colour pass), volume, the
+  controller layout (Nintendo / Xbox), the keys, and several mods at once. Let's Go's SSAO, GI, TAA, FSR 3.1 and frame
+  generation read that game's own scene passes: not here.
+
 ### Graphics fixes
 - The scene-change snapshot is no longer drawn upside down (NVN's mirror copy flags), and the rug at the foot of the
   stairs is no longer black (programs identified by the content of their code, hashed when they are drawn).
