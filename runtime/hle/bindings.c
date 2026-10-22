@@ -27,6 +27,23 @@ _Static_assert(PADB_LTRIGGER == SDL_GAMEPAD_BUTTON_COUNT, "trigger pseudo-button
     SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_5, \
     SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_6}
 static const int16_t k_def_pad[BIND_PAD_COUNT] = DEF_PAD, k_def_key[BIND_KEY_COUNT] = DEF_KEY;
+// Controller layout (launcher, Game page; larecomp.ini pad_layout): Nintendo (the defaults above, by position) or Xbox
+// - A on the bottom button, B on the right, X on the left, Y on the top, as the letters printed on an Xbox pad
+static int g_layout;  // BIND_LAYOUT_*
+static int16_t def_pad(int layout, int slot) {
+    static const int16_t xbox[4] = {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH};
+    return layout == BIND_LAYOUT_XBOX && slot < 4 ? xbox[slot] : k_def_pad[slot];
+}
+int bind_layout(void) { return g_layout; }
+// A / B and X / Y follow the layout where they are still at the old one's defaults (a remap of the Controls page stays)
+void bind_set_layout(int layout) {
+    layout = layout == BIND_LAYOUT_XBOX ? BIND_LAYOUT_XBOX : BIND_LAYOUT_NINTENDO;
+    if (layout == g_layout) return;
+    for (int i = 0; i < 4; i++)
+        if (g_bind_pad[i] == def_pad(g_layout, i)) g_bind_pad[i] = def_pad(layout, i);
+    g_layout = layout;
+    LOG("[input] controller layout: %s\n", layout == BIND_LAYOUT_XBOX ? "Xbox (A bottom, B right)" : "Nintendo (A right, B bottom)");
+}
 int16_t g_bind_pad[BIND_PAD_COUNT] = DEF_PAD, g_bind_key[BIND_KEY_COUNT] = DEF_KEY;
 const int16_t g_bind_key2[BIND_PAD_COUNT] = {SDL_SCANCODE_RETURN, SDL_SCANCODE_BACKSPACE};
 
@@ -99,18 +116,20 @@ int bind_label_family(void) {
 static void result(int kind, int dev, int slot, int other);
 
 void bind_reset(int dev) {
-    if (dev == BIND_DEV_PAD) memcpy(g_bind_pad, k_def_pad, sizeof g_bind_pad);
+    if (dev == BIND_DEV_PAD) for (int i = 0; i < BIND_PAD_COUNT; i++) g_bind_pad[i] = def_pad(g_layout, i);
     else memcpy(g_bind_key, k_def_key, sizeof g_bind_key);
     LOG("[input] %s bindings reset to the defaults\n", dev == BIND_DEV_PAD ? "controller" : "keyboard");
     result(5, dev, -1, -1);
 }
 
 bool bind_is_default(int dev) {
-    return dev == BIND_DEV_PAD ? !memcmp(g_bind_pad, k_def_pad, sizeof g_bind_pad) : !memcmp(g_bind_key, k_def_key, sizeof g_bind_key);
+    if (dev != BIND_DEV_PAD) return !memcmp(g_bind_key, k_def_key, sizeof g_bind_key);
+    for (int i = 0; i < BIND_PAD_COUNT; i++) if (g_bind_pad[i] != def_pad(g_layout, i)) return false;
+    return true;
 }
 
 bool bind_is_default_slot(int dev, int slot) {
-    return dev == BIND_DEV_PAD ? g_bind_pad[slot] == k_def_pad[slot] : g_bind_key[slot] == k_def_key[slot];
+    return dev == BIND_DEV_PAD ? g_bind_pad[slot] == def_pad(g_layout, slot) : g_bind_key[slot] == k_def_key[slot];
 }
 
 int bind_prompt_host(int slot) { return slot >= 0 && slot < BIND_PAD_COUNT ? g_bind_pad[slot] : -1; }
@@ -176,9 +195,9 @@ bool bind_capture_event(const SDL_Event *e) {
     case SDL_EVENT_KEY_DOWN:
         if (e->key.repeat) return true;
         if (e->key.scancode == SDL_SCANCODE_ESCAPE) { bind_capture_cancel(); return true; }
-        // F1 (menu), F9 (frame dump), F11 (fullscreen) stay the overlay's; a controller capture ignores keys
+        // F1 (menu), F9 (frame dump), F11 (fullscreen), F12 (settings) stay the overlay's; a controller capture ignores keys
         if (dev != BIND_DEV_KEY || e->key.scancode == SDL_SCANCODE_F1 || e->key.scancode == SDL_SCANCODE_F9 ||
-            e->key.scancode == SDL_SCANCODE_F11 || e->key.scancode >= SDL_SCANCODE_COUNT) return true;
+            e->key.scancode == SDL_SCANCODE_F11 || e->key.scancode == SDL_SCANCODE_F12 || e->key.scancode >= SDL_SCANCODE_COUNT) return true;
         cap_dev = -1;
         assign(dev, cap_slot, e->key.scancode);
         return true;
@@ -206,6 +225,7 @@ bool bind_capture_event(const SDL_Event *e) {
 
 // ------------------------------------------------------------------ larecomp.ini
 bool bind_settings_load(const char *key, const char *val) {
+    if (!strcmp(key, "pad_layout")) { bind_set_layout(!strcmp(val, "xbox") ? BIND_LAYOUT_XBOX : BIND_LAYOUT_NINTENDO); return true; }
     bool pad = !strncmp(key, "bind_pad_", 9), kb = !strncmp(key, "bind_key_", 9);
     if (!pad && !kb) return false;
     for (int i = 0; i < (pad ? BIND_PAD_COUNT : BIND_KEY_COUNT); i++) {
@@ -222,8 +242,9 @@ bool bind_settings_load(const char *key, const char *val) {
 }
 
 void bind_settings_save(FILE *f) {
+    fprintf(f, "pad_layout = %s\n", g_layout == BIND_LAYOUT_XBOX ? "xbox" : "nintendo");  // (before the bind_pad_ lines)
     for (int i = 0; i < BIND_PAD_COUNT; i++)
-        if (g_bind_pad[i] != k_def_pad[i] && g_bind_pad[i] >= 0 && g_bind_pad[i] < PADB_HOST_COUNT)
+        if (g_bind_pad[i] != def_pad(g_layout, i) && g_bind_pad[i] >= 0 && g_bind_pad[i] < PADB_HOST_COUNT)
             fprintf(f, "bind_pad_%s = %s\n", k_ini[i], k_pad_ini[g_bind_pad[i]]);
     for (int i = 0; i < BIND_KEY_COUNT; i++)
         if (g_bind_key[i] != k_def_key[i])

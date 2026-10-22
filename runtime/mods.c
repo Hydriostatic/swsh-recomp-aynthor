@@ -13,6 +13,7 @@
 
 #include "gamesetup.h"
 #include "hle.h"
+#include "paths.h"
 #include "platform.h"
 #include "romfs_build.h"
 #include "settings.h"
@@ -61,6 +62,13 @@ int mods_list(char names[][128], int max) {
     return n;
 }
 
+const char *mods_dir_abs(void) {
+    static char p[1100];
+    mkdir("mods", 0755);
+    snprintf(p, sizeof p, "%s/mods", rt_data_root());
+    return p;
+}
+
 static const char *romfs_of(const char *name) {
     static char cached_name[128], dir[1024];
     static bool ok;
@@ -69,21 +77,44 @@ static const char *romfs_of(const char *name) {
         snprintf(cached_name, sizeof cached_name, "%s", name);
         char p[1024];
         snprintf(p, sizeof p, "mods/%s", name);
-        ok = find_romfs(p, 4, dir, sizeof dir);
-        if (ok) LOG("[mods] %s: %s\n", name, dir);
-        else LOG("[mods] %s: no romfs/ folder found under mods/%s\n", name, name);
+        ok = find_romfs(p, 4, dir, sizeof dir);  // (the active ones are logged by active_dirs)
     }
     return ok ? dir : NULL;
 }
 
-const char *mod_romfs_dir(void) { return romfs_of(g_settings.mod); }
+// The active mods' romfs/ folders, made again when g_settings.mod changes
+static char g_dirs[MODS_MAX][1024], g_dirs_of[sizeof g_settings.mod];
+static int g_ndirs = -1;
+static void active_dirs(void) {
+    if (g_ndirs >= 0 && !strcmp(g_dirs_of, g_settings.mod)) return;
+    snprintf(g_dirs_of, sizeof g_dirs_of, "%s", g_settings.mod);
+    g_ndirs = 0;
+    char list[sizeof g_settings.mod];
+    snprintf(list, sizeof list, "%s", g_settings.mod);
+    for (char *save = NULL, *name = strtok_r(list, "|", &save); name && g_ndirs < MODS_MAX; name = strtok_r(NULL, "|", &save)) {
+        while (*name == ' ') name++;
+        char p[1024];
+        snprintf(p, sizeof p, "mods/%s", name);
+        if (*name && find_romfs(p, 4, g_dirs[g_ndirs], sizeof g_dirs[0])) LOG("[mods] %d: %s: %s\n", g_ndirs, name, g_dirs[g_ndirs]), g_ndirs++;
+        else if (*name) LOG("[mods] %s: no romfs/ folder found under mods/%s\n", name, name);
+    }
+}
+
+int mod_romfs_dirs(const char **out, int max) {
+    active_dirs();
+    int n = 0;
+    for (; n < g_ndirs && n < max; n++) out[n] = g_dirs[n];
+    return n;
+}
 
 bool mod_romfs_override(const char *path, char *out, size_t cap) {
-    const char *root = mod_romfs_dir();
-    if (!root) return false;
+    active_dirs();
     struct stat sb;
-    snprintf(out, cap, "%s/%s", root, path);
-    return !stat(out, &sb) && S_ISREG(sb.st_mode);
+    for (int i = 0; i < g_ndirs; i++) {
+        snprintf(out, cap, "%s/%s", g_dirs[i], path);
+        if (!stat(out, &sb) && S_ISREG(sb.st_mode)) return true;
+    }
+    return false;
 }
 
 // bin/message/<folder> -> language code
@@ -107,8 +138,13 @@ const char *mod_language(const char *name) {
 }
 
 const char *game_language(void) {
-    const char *m = mod_language(g_settings.mod);
-    if (m) return m;
+    char list[sizeof g_settings.mod];
+    snprintf(list, sizeof list, "%s", g_settings.mod);
+    for (char *save = NULL, *name = strtok_r(list, "|", &save); name; name = strtok_r(NULL, "|", &save)) {
+        static char lang[16];  // (mod_language's answer lives in a table: copied out of the loop's buffer anyway)
+        const char *m = mod_language(name);
+        if (m) { snprintf(lang, sizeof lang, "%s", m); return lang; }
+    }
     return g_settings.game_lang[0] ? g_settings.game_lang : "en-US";
 }
 

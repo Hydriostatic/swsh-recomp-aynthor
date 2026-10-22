@@ -14,6 +14,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "osk.h"
+#include "settings_ui.h"
 
 static struct {
     int open;                        // a field's keyboard is up
@@ -173,7 +174,7 @@ void osk_draw(ImFont *big, float scale) {
         return;
     }
     ImGui::PushFont(big);
-    ImGui::TextColored(ImVec4(0.93f, 0.76f, 0.33f, 1), "%s", s.title);
+    ImGui::TextColored(UI_TEXT, "%s", s.title);
     ImGui::PopFont();
     int max = (int)(s.size < sizeof s.text ? s.size : sizeof s.text) - 1;
     int r = cancel ? -1 : osk_keys(s.text, sizeof s.text, max, s.appearing, scale, big);

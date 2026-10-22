@@ -2439,7 +2439,7 @@ static void build_pipeline(void *arg) {
     VkPipelineViewportStateCreateInfo vs = {.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1, .scissorCount = 1};
     VkPipelineRasterizationStateCreateInfo rs = {.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
                                                  .polygonMode = k->poly_fill ? VK_POLYGON_MODE_FILL : VK_POLYGON_MODE_LINE, .lineWidth = 1,
-                                                 .depthClampEnable = k->depth_clamp};
+                                                 .depthClampEnable = k->depth_clamp != 0};
     VkPipelineMultisampleStateCreateInfo ms = {.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
                                                .rasterizationSamples = (VkSampleCountFlagBits)k->samples, .alphaToCoverageEnable = k->a2c};
     VkPipelineDepthStencilStateCreateInfo ds = {.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
@@ -2626,7 +2626,7 @@ static VkPipeline gpl_build_part(int kind, const PipeKey *k) {
         st.stage = VK_SHADER_STAGE_VERTEX_BIT;
         st.module = k->prog->vs;
         rs.polygonMode = k->poly_fill ? VK_POLYGON_MODE_FILL : VK_POLYGON_MODE_LINE;
-        rs.depthClampEnable = k->depth_clamp;
+        rs.depthClampEnable = k->depth_clamp != 0;
         pi.stageCount = 1; pi.pStages = &st;
         pi.pViewportState = &vs;
         pi.pRasterizationState = &rs;
@@ -3585,6 +3585,7 @@ static void recipes_load(void) {
             if (r.magic != RECIPE_MAGIC || r.version != RECIPE_VERSION || r.keysize != sizeof(ShaderKey) ||
                 r.pipesize != sizeof(PipeKey) || r.check != recipe_check(&r) || !r.chash[0]) { bad++; continue; }
             if (!recipe_known_add(r.check)) continue;
+            r.k.depth_clamp = r.k.depth_clamp != 0;  // (older builds recorded 15: not a VkBool32, and no draw's key matched it)
             if (g_nrecipes == g_cap_recipes) {
                 g_cap_recipes = g_cap_recipes ? g_cap_recipes * 2 : 1024;
                 g_recipes = realloc(g_recipes, (size_t)g_cap_recipes * sizeof *g_recipes);
@@ -4940,7 +4941,7 @@ static VkPipeline post_pipeline(const char *fs) {
 // Post image `i` at w x h (RGBA8, kept until the size changes). 0, 1: SMAA edges / weights, 2: SMAA output,
 // 3, 4: FSR EASU / RCAS.
 static TexBackend *post_image(int i, uint32_t w, uint32_t h) {
-    static TexBackend img[5];
+    static TexBackend img[6];  // (0-2 SMAA, 3-4 FSR 1, 5 the colour adjustment)
     TexBackend *d = &img[i];
     if (d->image && (d->width != w || d->height != h)) {
         vk_views_forget(d);
@@ -5035,7 +5036,9 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
     if (ow > 16384) ow = 16384;
     if (oh > 16384) oh = 16384;
     bool fsr = g_settings.upscaler == UPSCALE_FSR1 && (ow > b->width + 1 || oh > b->height + 1);  // (an upscale only)
-    if (!smaa && !fsr) return v;
+    float grade[3] = {g_settings.brightness, g_settings.contrast, g_settings.saturation};  // (F12 menu / start screen)
+    bool color = fabsf(grade[0] - 1) > 0.005f || fabsf(grade[1] - 1) > 0.005f || fabsf(grade[2] - 1) > 0.005f;
+    if (!smaa && !fsr && !color) return v;
     extern void vk_frame_suspend(void);
     extern void vk_frame_resume(void);
     vk_frame_suspend();
@@ -5052,6 +5055,13 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
         post_pass(cb, "smaa_blend.frag", bi, 2, out, m, false);
         v = post_view(out);
     }
+    if (color) {  // after SMAA (its edges are found on the game's own colours), before FSR (at the smaller size)
+        float pc[8] = {grade[0], grade[1], grade[2]};
+        TexBackend *c = post_image(5, b->width, b->height);
+        VkImageView ci[3] = {v};
+        post_pass(cb, "color.frag", ci, 1, c, pc, false);
+        v = post_view(c);
+    }
     if (fsr) {
         float iw = (float)b->width, ih = (float)b->height;
         TexBackend *e = post_image(3, ow, oh), *r = post_image(4, ow, oh);
@@ -5067,10 +5077,10 @@ static VkImageView post_process(VkCommandBuffer cb, TexBackend *b, double ow_d, 
     vk_frame_resume();
     {
         static uint32_t piw, pih, pow_, poh;
-        static int psm = -1, pfs = -1;
-        if (b->width != piw || b->height != pih || ow != pow_ || oh != poh || smaa != psm || fsr != pfs)
-            LOG("[post] %ux%u%s%s -> %ux%u\n", b->width, b->height, smaa ? " smaa" : "", fsr ? " fsr1" : "", ow, oh);
-        piw = b->width; pih = b->height; pow_ = ow; poh = oh; psm = smaa; pfs = fsr;
+        static int psm = -1, pfs = -1, pco = -1;
+        if (b->width != piw || b->height != pih || ow != pow_ || oh != poh || smaa != psm || fsr != pfs || color != pco)
+            LOG("[post] %ux%u%s%s%s -> %ux%u\n", b->width, b->height, smaa ? " smaa" : "", color ? " colour" : "", fsr ? " fsr1" : "", ow, oh);
+        piw = b->width; pih = b->height; pow_ = ow; poh = oh; psm = smaa; pfs = fsr; pco = color;
     }
     return v;
 }

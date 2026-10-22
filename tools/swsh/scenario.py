@@ -54,9 +54,13 @@ def git(*args):
 
 
 def sword_instances():
-    """Process ids of running Sword 1.3.2 runtimes (command line with extracted-132), ours or the player's."""
+    """Process ids of running Sword 1.3.2 runtimes (command line with extracted-132), ours or the player's. One that has
+    exited but is still being torn down is left out (a validation-layer run left 2 million handles for Windows to close:
+    it stayed listed for hours, its last thread in the driver)."""
     ps = ("Get-CimInstance Win32_Process -Filter \"Name='lasrecomp.exe'\" | "
-          "Where-Object { $_.CommandLine -like '*extracted-132*' } | ForEach-Object { $_.ProcessId }")
+          "Where-Object { $_.CommandLine -like '*extracted-132*' } | "
+          "Where-Object { $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; $p -and -not $p.HasExited } | "
+          "ForEach-Object { $_.ProcessId }")
     out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout
     return [int(x) for x in out.split() if x.strip().isdigit()]
 

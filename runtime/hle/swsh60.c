@@ -48,6 +48,7 @@ void swsh60_configure(const char *exefs) {
 }
 
 bool swsh60_enabled(void) { return g_on; }
+bool swsh60_known(void) { return g_build != NULL; }  // (the F12 menu: the 60 fps choice is offered)
 
 // nvnWindowSetPresentInterval (runtime/nvn/objects.c): the interval the game asked for -> the one to use. The table
 // entry is written here the first time: the game's main is loaded by then.

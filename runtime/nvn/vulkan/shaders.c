@@ -431,6 +431,22 @@ static const char *builtin_src(const char *name, int *stage) {
     }
     // FSR 1 RCAS: contrast-adaptive sharpening of the EASU output (same size). a.x = sharpness (exp2(-stops)),
     // b.xy = image size. The lobe is limited so the result stays inside the neighbours' range; noise is damped.
+    // Colour adjustment (F12 menu: runtime/ui/settings_ui.mm; Let's Go Recomp 0.6.0's), on the gamma-encoded image.
+    // a = (brightness, contrast, saturation): brightness scales, contrast pivots around mid-grey, saturation mixes with
+    // the Rec. 709 luma.
+    if (!strcmp(name, "color.frag")) {
+        *stage = STAGE_FRAGMENT;
+        return "#version 450\n"
+               "layout(set = 0, binding = 0) uniform sampler2D t;\n"
+               "layout(push_constant) uniform P { vec4 a; vec4 b; } pc;\n"
+               "layout(location = 0) out vec4 o;\n"
+               "void main() {\n"
+               "  vec3 c = texelFetch(t, ivec2(gl_FragCoord.xy), 0).rgb * pc.a.x;\n"
+               "  c = (c - 0.5) * pc.a.y + 0.5;\n"
+               "  c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, pc.a.z);\n"
+               "  o = vec4(clamp(c, 0.0, 1.0), 1.0);\n"
+               "}\n";
+    }
     if (!strcmp(name, "rcas.frag")) {
         *stage = STAGE_FRAGMENT;
         return "#version 450\n"

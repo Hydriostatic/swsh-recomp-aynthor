@@ -1,4 +1,5 @@
-// In-game overlay (Dear ImGui): the "close the game?" question (Esc, F1, or Minus+Plus on a controller), the name
+// In-game overlay (Dear ImGui): the "close the game?" question (Esc, F1, or Minus+Plus on a controller), the F12
+// settings (volume, brightness, contrast, saturation), the name
 // entry, the FPS counter and the controller's finger on the touch screen. runtime/ui/menu.mm.
 #pragma once
 #include <stdbool.h>
