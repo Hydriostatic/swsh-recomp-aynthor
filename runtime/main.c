@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "hle.h"
 #include "kernel.h"
+#include "panel.h"
 
 const char *g_romfs_dir;
 
@@ -183,6 +184,7 @@ int main(int argc, char **argv) {
     }
     rt_paths_init();  // the data root becomes the working directory (runtime/paths.h)
     for (bool title = !skip_launcher;;) {
+        panel_state(PANEL_START_SCREEN);
         if (title) {  // start screen: resolution, fullscreen, anti-aliasing, translation, keys (runtime/ui/launcher_lg.mm)
             extern void launcher_lg_run(const char *root);
             launcher_lg_run(root);
@@ -203,7 +205,9 @@ int main(int argc, char **argv) {
         }
         { extern void fps60_configure(void); fps60_configure(); }  // (runtime/hle/fps60.c: the launcher's 60 fps option)
         { extern void wildbattle_configure(void); wildbattle_configure(); }  // (runtime/hle/wildbattle.c: the wild battles option)
+        panel_state(PANEL_BOOTING);
         boot(root);
+        panel_state(PANEL_PLAYING);
         int kind = ui_run();  // window and input on the main thread; returns when a reboot is requested
         teardown();
         title = kind == RT_REBOOT_TITLE;

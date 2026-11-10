@@ -980,6 +980,7 @@ void ui_window_init(void) {
 }
 
 SDL_Window *ui_window(void) { return window; }
+const char *vk_gpu_name(void) { return g_vk.phys ? g_vk.props.deviceName : NULL; }  // (runtime/panel.c)
 
 void backend_init(void) {
     while (!atomic_load(&ui_ready)) SDL_Delay(1);

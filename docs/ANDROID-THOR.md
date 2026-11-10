@@ -49,3 +49,17 @@ example `LARECOMP_VK_PRESENT=fifo`.
 - Mod installs from archives (they use Windows' tar). Folder mods in `mods/` still work.
 - The C++ sources (the UI and the ImGui / VMA glue) haven't been compiled for Android outside CI yet.
 - RAM: the game needs about 5 GB. Thor models with 8 GB may run out.
+
+## Bottom screen (AYN Thor)
+
+The Thor's second display shows an information panel (`android/.../DualScreen.java`): the game and version, the state,
+the frame rate (large, green / yellow / red against the target), frame time, shader preparation, memory, GPU,
+battery and battery temperature. It refreshes 4 times a second, follows the top screen (it's gone while the app is
+in the background), and stays the menus' grey when there's nothing to show.
+
+To show more, publish it from anywhere in the runtime (`runtime/panel.h`):
+
+    panel_set("party", "Lead", "%s  Lv %d", name, level);   // a "PARTY" card with one row
+    panel_clear("party");                                   // gone again
+
+Sections appear as cards in the order they're first set.

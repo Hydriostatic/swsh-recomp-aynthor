@@ -357,3 +357,16 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
     pthread_join(t, NULL);
     return a.rc;
 }
+
+// ---- second screen (android/.../DualScreen.java: the AYN Thor's bottom screen asks a few times a second)
+#include <jni.h>
+
+#include "../panel.h"
+
+__attribute__((visibility("default"))) JNIEXPORT jstring JNICALL
+Java_io_github_hydriostatic_swshrecomp_DualScreen_nativeSnapshot(JNIEnv *env, jclass cls) {
+    (void)cls;
+    static char buf[16384];  // (one caller: the panel's UI thread)
+    panel_snapshot(buf, sizeof buf);
+    return (*env)->NewStringUTF(env, buf);
+}
