@@ -7,6 +7,8 @@
 
 #ifdef _WIN32
 #include "platform/win_compat.h"
+#elif defined(__ANDROID__)
+#include "platform/android_compat.h"
 #elif defined(__linux__)
 #include "platform/linux_compat.h"
 #endif
@@ -72,6 +74,15 @@ bool plat_remove_tree(const char *dir);      // rm -rf
 #else
 #define PLAT_EXE_SUFFIX ""
 #define PLAT_VENV_PYTHON "venv/bin/python"
+#endif
+
+#ifdef __ANDROID__
+// ---- Android (runtime/platform/android.c)
+// The game code library at src (shared storage) copied where it can be loaded from; out: the path to load.
+bool plat_android_stage_lib(const char *src, char *out, size_t n);
+const char *plat_android_data_dir(void);       // the data root: Android/data/<package>/files on shared storage
+bool plat_android_in_background(void);         // the activity is paused: its window has no surface to draw into
+int plat_android_surface_generation(void);     // counts the returns to the foreground (each brings a new surface)
 #endif
 
 // ---- diagnostics

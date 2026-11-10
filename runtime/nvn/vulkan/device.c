@@ -279,6 +279,31 @@ static void create_device(void) {
     if (getenv("LARECOMP_NO_ROBUST")) b->robustBufferAccess = VK_FALSE;  // (research: what the bounds checks cost)
     b->shaderClipDistance = h->shaderClipDistance;
     if (!h->shaderInt64) LOG("[vk] warning: no shaderInt64 (64-bit address math in shaders)\n");
+#ifdef __ANDROID__
+    // Mobile drivers (Adreno, Mali) lack some of what desktop ones all have, and vkCreateDevice fails outright when
+    // asked for a missing feature: ask for what is there and name the rest in the log (what breaks without it is then
+    // a rendering fault to look into, not a refusal to start).
+    {
+        VkPhysicalDeviceCustomBorderColorFeaturesEXT qcbc = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT};
+        VkPhysicalDeviceVulkan13Features q13 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+                                                .pNext = g_vk.custom_border ? &qcbc : NULL};
+        VkPhysicalDeviceVulkan12Features q12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &q13};
+        VkPhysicalDeviceVulkan11Features q11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &q12};
+        VkPhysicalDeviceFeatures2 q = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &q11};
+        vkGetPhysicalDeviceFeatures2(g_vk.phys, &q);
+#define KEEP(want, got, field) \
+    if ((want).field && !(got).field) { LOG("[vk] warning: the driver has no " #field "\n"); (want).field = VK_FALSE; }
+        KEEP(f13, q13, dynamicRendering) KEEP(f13, q13, synchronization2) KEEP(f13, q13, shaderDemoteToHelperInvocation)
+        KEEP(f13, q13, shaderTerminateInvocation) KEEP(f13, q13, maintenance4)
+        KEEP(f12, q12, timelineSemaphore) KEEP(f12, q12, shaderInt8) KEEP(f12, q12, samplerMirrorClampToEdge)
+        KEEP(f12, q12, uniformAndStorageBuffer8BitAccess) KEEP(f12, q12, storageBuffer8BitAccess) KEEP(f12, q12, scalarBlockLayout)
+        KEEP(f11, q11, storageBuffer16BitAccess)
+        if (g_vk.custom_border) { KEEP(cbc, qcbc, customBorderColors) KEEP(cbc, qcbc, customBorderColorWithoutFormat) }
+#undef KEEP
+        LOG("[vk] textures: BC %s, ASTC %s\n", h->textureCompressionBC ? "native" : "decoded on the CPU (bcdec.c)",
+            h->textureCompressionASTC_LDR ? "native" : "decoded");
+    }
+#endif
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qi = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = g_vk.qfam,
                                   .queueCount = 1, .pQueuePriorities = &prio};
@@ -355,7 +380,14 @@ static VkPresentModeKHR present_mode(void) {
 
 static void create_swapchain(void) {
     VkSurfaceCapabilitiesKHR caps;
+#ifdef __ANDROID__
+    {  // (a surface that went away with the app in the background: vk_frame_begin makes a new one)
+        VkResult cr = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_vk.phys, g_vk.surface, &caps);
+        if (cr != VK_SUCCESS) { LOG("[vk] surface capabilities: %d\n", cr); return; }
+    }
+#else
     VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_vk.phys, g_vk.surface, &caps));
+#endif
     int w, h;
     SDL_GetWindowSizeInPixels(window, &w, &h);
     VkExtent2D ext = caps.currentExtent.width != UINT32_MAX ? caps.currentExtent : (VkExtent2D){(uint32_t)w, (uint32_t)h};
@@ -369,6 +401,19 @@ static void create_swapchain(void) {
     VkSurfaceFormatKHR sf = fmts[0];
     for (uint32_t i = 0; i < nf; i++)
         if (fmts[i].format == VK_FORMAT_B8G8R8A8_UNORM && fmts[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { sf = fmts[i]; break; }
+    if (sf.format != VK_FORMAT_B8G8R8A8_UNORM)  // (Android surfaces are RGBA; the first format listed there may be an sRGB one)
+        for (uint32_t i = 0; i < nf; i++)
+            if (fmts[i].format == VK_FORMAT_R8G8B8A8_UNORM && fmts[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { sf = fmts[i]; break; }
+    // Android: composition is the window manager's (only INHERIT is offered), and the surface is drawn upright with
+    // the compositor rotating it where the panel is mounted sideways (IDENTITY: no pre-rotated rendering here)
+    VkCompositeAlphaFlagBitsKHR alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (!(caps.supportedCompositeAlpha & alpha))
+        alpha = caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR ? VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR
+              : (VkCompositeAlphaFlagBitsKHR)(caps.supportedCompositeAlpha & -caps.supportedCompositeAlpha);
+    VkSurfaceTransformFlagBitsKHR transform = caps.currentTransform;
+#ifdef __ANDROID__
+    if (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+#endif
     uint32_t count = caps.minImageCount + 1;
     if (caps.maxImageCount && count > caps.maxImageCount) count = caps.maxImageCount;
     if (count > 8) count = 8;
@@ -377,10 +422,24 @@ static void create_swapchain(void) {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = g_vk.surface, .minImageCount = count,
         .imageFormat = sf.format, .imageColorSpace = sf.colorSpace, .imageExtent = ext, .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE, .preTransform = caps.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, .presentMode = present_mode(), .clipped = VK_TRUE,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE, .preTransform = transform,
+        .compositeAlpha = alpha, .presentMode = present_mode(), .clipped = VK_TRUE,
         .oldSwapchain = old};
+#ifdef __ANDROID__
+    {
+        VkResult sr = vkCreateSwapchainKHR(g_vk.dev, &ci, NULL, &g_vk.swapchain);
+        if (sr != VK_SUCCESS) {  // (the surface went away meanwhile: no swapchain until vk_frame_begin has a new one)
+            LOG("[vk] swapchain: %d\n", sr);
+            for (uint32_t i = 0; i < g_vk.sc_count; i++) vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
+            g_vk.sc_count = 0;
+            if (old) vkDestroySwapchainKHR(g_vk.dev, old, NULL);
+            g_vk.swapchain = VK_NULL_HANDLE;
+            return;
+        }
+    }
+#else
     VK_CHECK(vkCreateSwapchainKHR(g_vk.dev, &ci, NULL, &g_vk.swapchain));
+#endif
     for (uint32_t i = 0; i < g_vk.sc_count; i++) vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
     if (old) vkDestroySwapchainKHR(g_vk.dev, old, NULL);
     g_vk.sc_format = sf.format;
@@ -399,6 +458,34 @@ static void recreate_swapchain(void) {
     vkDeviceWaitIdle(g_vk.dev);
     create_swapchain();
 }
+
+#ifdef __ANDROID__
+// Android takes the window's surface away while the app is in the background and hands out a new one when it comes
+// back (runtime/platform/android.c counts the returns). Whoever presents waits here meanwhile - which also holds the
+// game still, as it paces itself on presenting - and then makes the surface and the swapchain again.
+static int g_surface_gen;
+static void android_surface_check(void) {
+    while (plat_android_in_background()) SDL_Delay(50);
+    int gen = plat_android_surface_generation();
+    if (gen == g_surface_gen) return;  // (-1: the surface was lost, vk_frame_begin)
+    LOG("[vk] back in the foreground: new surface\n");
+    vkDeviceWaitIdle(g_vk.dev);
+    for (uint32_t i = 0; i < g_vk.sc_count; i++) vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
+    g_vk.sc_count = 0;
+    if (g_vk.swapchain) vkDestroySwapchainKHR(g_vk.dev, g_vk.swapchain, NULL);
+    g_vk.swapchain = VK_NULL_HANDLE;
+    if (g_vk.surface) SDL_Vulkan_DestroySurface(g_vk.inst, g_vk.surface, NULL);
+    g_vk.surface = VK_NULL_HANDLE;
+    for (int tries = 0; tries < 100; tries++) {  // (the window gets its new surface a moment after the event)
+        if (SDL_Vulkan_CreateSurface(window, g_vk.inst, NULL, &g_vk.surface)) break;
+        g_vk.surface = VK_NULL_HANDLE;
+        SDL_Delay(50);
+    }
+    if (!g_vk.surface) { LOG("[vk] no surface: %s\n", SDL_GetError()); return; }
+    g_surface_gen = gen;
+    create_swapchain();
+}
+#endif
 
 // ================================================================== frames (start screen and game)
 // Acquire semaphores rotate per frame in flight; a slot is reused once the submission that waited on it is done.
@@ -433,10 +520,18 @@ static Frame cur_frame;
 // nothing to draw into (minimised window).
 bool vk_frame_begin(const float clear[4]) {
     cur_frame.ok = false;
+#ifdef __ANDROID__
+    android_surface_check();
+    if (!g_vk.surface) return false;
+#endif
     int w, h;
     SDL_GetWindowSizeInPixels(window, &w, &h);
     if (!w || !h) return false;  // minimised
+#ifdef __ANDROID__  // (the surface's own size is the one that counts: SDL's can lag behind a rotation)
+    if (!g_vk.swapchain) recreate_swapchain();
+#else
     if (!g_vk.swapchain || (uint32_t)w != g_vk.sc_extent.width || (uint32_t)h != g_vk.sc_extent.height) recreate_swapchain();
+#endif
     if (!g_vk.swapchain) return false;
     static int trace = -1;
     if (trace < 0) trace = getenv("LARECOMP_VK_TRACE") != NULL;
@@ -447,8 +542,20 @@ bool vk_frame_begin(const float clear[4]) {
     VkResult r = vkAcquireNextImageKHR(g_vk.dev, g_vk.swapchain, UINT64_MAX, acquire_sem[slot], VK_NULL_HANDLE, &cur_frame.image);
     if (r == VK_ERROR_OUT_OF_DATE_KHR) {
         recreate_swapchain();
+        if (!g_vk.swapchain) return false;
         r = vkAcquireNextImageKHR(g_vk.dev, g_vk.swapchain, UINT64_MAX, acquire_sem[slot], VK_NULL_HANDLE, &cur_frame.image);
     }
+#ifdef __ANDROID__
+    if (r == VK_ERROR_SURFACE_LOST_KHR) {  // (gone without the app leaving the foreground: a new one next frame)
+        vkDeviceWaitIdle(g_vk.dev);
+        for (uint32_t i = 0; i < g_vk.sc_count; i++) vkDestroyImageView(g_vk.dev, g_vk.sc_views[i], NULL);
+        g_vk.sc_count = 0;
+        vkDestroySwapchainKHR(g_vk.dev, g_vk.swapchain, NULL);
+        g_vk.swapchain = VK_NULL_HANDLE;
+        g_surface_gen = -1;
+        return false;
+    }
+#endif
     static unsigned acquire_fails;  // (a window the driver keeps reporting out of date: logged once per 600, not every frame)
     if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
         if (acquire_fails++ % 600 == 0) LOG("[vk] acquire failed: %d (%u times)\n", r, acquire_fails);
@@ -522,7 +629,12 @@ void vk_frame_end(const char *shot_path) {
     VkPresentInfoKHR pi = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount = 1, .pWaitSemaphores = &done_sem[img],
                            .swapchainCount = 1, .pSwapchains = &g_vk.swapchain, .pImageIndices = &img};
     VkResult r = vkQueuePresentKHR(g_vk.queue, &pi);
+#ifdef __ANDROID__
+    // (SUBOPTIMAL is what Android answers every frame to a swapchain that leaves the rotation to the compositor)
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) recreate_swapchain();
+#else
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) recreate_swapchain();
+#endif
     cur_frame.ok = false;
     if (shot_path) {
         vk_wait_seq(seq);

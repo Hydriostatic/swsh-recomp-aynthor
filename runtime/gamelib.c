@@ -61,6 +61,14 @@ static const GameLibTables *open_lib(const char *path) {
     if (!h) { snprintf(g_error, sizeof g_error, "can't load %s (error %lu)", path, GetLastError()); return NULL; }
     GameLibEntry entry = (GameLibEntry)(void *)GetProcAddress(h, GAMELIB_ENTRY);
 #else
+#ifdef __ANDROID__
+    char staged[1100];  // (shared storage is noexec: runtime/platform/android.c)
+    if (!plat_android_stage_lib(path, staged, sizeof staged)) {
+        snprintf(g_error, sizeof g_error, "can't copy %s into the app's folder (storage full?)", path);
+        return NULL;
+    }
+    path = staged;
+#endif
     void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!h) { snprintf(g_error, sizeof g_error, "%s", dlerror()); return NULL; }
     GameLibEntry entry = (GameLibEntry)dlsym(h, GAMELIB_ENTRY);

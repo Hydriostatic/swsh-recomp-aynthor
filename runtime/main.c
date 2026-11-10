@@ -40,6 +40,11 @@ static void rtld_init_main(Cpu *c) { module_init(c, &g_modules[0]); }
 // regions at random addresses in the same window; on a collision, re-exec for a fresh layout.
 __attribute__((constructor(101))) static void reserve_guest_space(void) {
     if (plat_reserve_guest(GUEST_LO, GUEST_HI)) return;
+#ifdef __ANDROID__
+    // (an activity can't re-execute itself; the Android build's window is where nothing else maps, platform/android.c)
+    fprintf(stderr, "FATAL: guest address range %llx-%llx is not free\n", GUEST_LO, GUEST_HI);
+    abort();
+#endif
     const char *tries = getenv("LARECOMP_REEXEC");
     int n = tries ? atoi(tries) : 0;
     if (n >= 20) {

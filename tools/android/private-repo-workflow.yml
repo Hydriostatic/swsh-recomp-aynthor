@@ -1,0 +1,41 @@
+# Copy into your PRIVATE repository (the one with your own game files) as .github/workflows/gamelib.yml.
+# Layout there: exefs/ (main, main.npdm, rtld, sdk, subsdk0, subsdk1) - extracted from your own copy of Pokémon Sword
+# 1.3.2. Secret FORK_TOKEN: not needed while the fork is public.
+# It downloads the app build of the same commit (to link against its libmain.so) and builds lasgame.so for it; the
+# artifact stays in this private repository.
+name: Game code for the Android app
+on:
+  workflow_dispatch:
+    inputs:
+      ref: { description: "commit / branch of the fork", default: "thor" }
+
+jobs:
+  gamelib:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: game, lfs: true }
+      - uses: actions/checkout@v4
+        with: { repository: Hydriostatic/swsh-recomp, ref: "${{ inputs.ref }}", path: app }
+      - name: NDK
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" > /dev/null
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          pip install capstone unicorn
+      - name: The app build's libmain.so
+        env: { GH_TOKEN: "${{ github.token }}" }
+        working-directory: app
+        run: |
+          sha=$(git rev-parse HEAD)
+          run=$(gh run list -R Hydriostatic/swsh-recomp -w "Android (AYN Thor)" -c "$sha" -s success --json databaseId -q '.[0].databaseId')
+          [ -n "$run" ] || { echo "no successful app build of $sha yet"; exit 1; }
+          gh run download "$run" -R Hydriostatic/swsh-recomp -n swshrecomp-thor -D ../appbuild
+      - name: Build the game code
+        working-directory: app
+        run: |
+          git clone -q --depth 1 -b release-3.4.8 https://github.com/libsdl-org/SDL ../SDL
+          tools/android/prepare.sh ../SDL
+          diff ../appbuild/GAMELIB_ID build/android-src/GAMELIB_ID
+          ANDROID_LIBMAIN=../appbuild/libmain.so tools/android/build_gamelib.sh ../game/exefs ../out
+      - uses: actions/upload-artifact@v4
+        with: { name: lasgame-thor, path: out/, retention-days: 7 }

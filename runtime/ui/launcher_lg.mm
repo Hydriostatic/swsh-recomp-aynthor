@@ -29,6 +29,7 @@ extern "C" {
 #include "input_bind.h"
 #include "mods.h"
 #include "paths.h"
+#include "platform.h"
 #include "settings.h"
 void settings_save(void);
 void ui_window_init(void);
@@ -131,6 +132,18 @@ static void SDLCALL picked_game(void *, const char *const *files, int) {
     snprintf(g_pick_game, sizeof g_pick_game, "%s", files[0]);
     pthread_mutex_unlock(&g_pick_lock);
 }
+#ifdef __ANDROID__
+// No folder picker (and no path a picked folder could be read by): the game files are taken from import/ in the
+// app's folder on shared storage, or put straight into extracted/ (docs/ANDROID-THOR.md).
+static void pick_game_folder(SDL_Window *) {
+    char p[1100];
+    snprintf(p, sizeof p, "%s/import", plat_android_data_dir());
+    const char *const files[] = {p, NULL};
+    picked_game(NULL, files, 0);
+}
+#else
+static void pick_game_folder(SDL_Window *win) { SDL_ShowOpenFolderDialog(picked_game, NULL, win, NULL, false); }
+#endif
 static void SDLCALL picked_mod(void *, const char *const *files, int) {
     if (!files || !files[0]) return;
     pthread_mutex_lock(&g_pick_lock);
@@ -168,7 +181,7 @@ static void game_files_section(SDL_Window *win) {
     if (ready) {
         const char *title = game_title("extracted/exefs");
         ImGui::TextColored(k_green, g_pt ? "%s - pronto para jogar" : "%s - ready to play", title ? title : "Pokémon");
-        if (ui_button(T("Change folder...", "Trocar pasta..."))) SDL_ShowOpenFolderDialog(picked_game, NULL, win, NULL, false);
+        if (ui_button(T("Change folder...", "Trocar pasta..."))) pick_game_folder(win);
         return;
     }
     if (st >= SETUP_FAIL_NOT_FOUND) {
@@ -186,15 +199,39 @@ static void game_files_section(SDL_Window *win) {
                                            "Confira se há uns 2 GB livres e tente de novo; detalhes no lasrecomp.log.", "Baixe a release de novo."};
         int k = st - SETUP_FAIL_NOT_FOUND;
         ImGui::TextColored(k_red, "%s", T(en[k], pt[k]));
+#ifdef __ANDROID__
+        if (st == SETUP_FAIL_TOOLS || st == SETUP_FAIL_BUILD) {  // (no compiler here: the library comes with the files)
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", st == SETUP_FAIL_TOOLS
+                ? T("Put lasgame.so and lasgame.so.id (built for this version of the app) in the import folder too.",
+                    "Coloque também lasgame.so e lasgame.so.id (compilados para esta versão do app) na pasta import.")
+                : T("That lasgame.so was built for another version of the app: build it again for this one.",
+                    "Esse lasgame.so foi compilado para outra versão do app: compile de novo para esta."));
+            ImGui::TextDisabled("%s/import", plat_android_data_dir());
+            ImGui::PopTextWrapPos();
+        } else
+#endif
         ImGui::TextDisabled("%s", T(en_h[k], pt_h[k]));
     } else {
         ImGui::PushTextWrapPos(0);
+#ifdef __ANDROID__
+        ImGui::TextUnformatted(T("Copy your own extracted Pokémon Sword or Shield 1.3.2 (exefs, romfs or romfs.bin) and the game "
+                                 "code built for this app (lasgame.so, lasgame.so.id) into this folder, then press the button:",
+                                 "Copie o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs, romfs ou romfs.bin) e o código do "
+                                 "jogo compilado para este app (lasgame.so, lasgame.so.id) para esta pasta e aperte o botão:"));
+        ImGui::TextDisabled("%s/import", plat_android_data_dir());
+#else
         ImGui::TextUnformatted(T("Select the folder with your own extracted Pokémon Sword or Shield, 1.3.2 (exefs and romfs).",
                                  "Selecione a pasta com o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs e romfs)."));
+#endif
         ImGui::PopTextWrapPos();
     }
+#ifdef __ANDROID__
+    if (ui_button(T("Set up from the import folder", "Preparar a partir da pasta import"), -1))
+#else
     if (ui_button(T("Select game folder...", "Selecionar pasta do jogo..."), -1))
-        SDL_ShowOpenFolderDialog(picked_game, NULL, win, NULL, false);
+#endif
+        pick_game_folder(win);
 }
 
 // ------------------------------------------------------------------ the Mods tab

@@ -10,6 +10,7 @@
 
 #include "vk.h"
 #include "../astc.h"
+#include "../bcdec.h"
 #include "../renderer.h"
 
 // ================================================================== formats
@@ -138,6 +139,35 @@ static VkImageAspectFlags aspect_of(uint32_t f) {
     if (f == 0x35 || f == 0x36) return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
     if (renderer_format_is_depth(f)) return VK_IMAGE_ASPECT_DEPTH_BIT;
     return VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+// BC formats -> the bcdec.h kind, and the plain format its decode is uploaded as (same colour space / signedness)
+static int bc_kind_of(VkFormat f) {
+    switch (f) {
+    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: return BC_1;
+    case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC2_SRGB_BLOCK: return BC_2;
+    case VK_FORMAT_BC3_UNORM_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: return BC_3;
+    case VK_FORMAT_BC4_UNORM_BLOCK: return BC_4U;
+    case VK_FORMAT_BC4_SNORM_BLOCK: return BC_4S;
+    case VK_FORMAT_BC5_UNORM_BLOCK: return BC_5U;
+    case VK_FORMAT_BC5_SNORM_BLOCK: return BC_5S;
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK: return BC_6HU;
+    case VK_FORMAT_BC6H_SFLOAT_BLOCK: return BC_6HS;
+    case VK_FORMAT_BC7_UNORM_BLOCK: case VK_FORMAT_BC7_SRGB_BLOCK: return BC_7;
+    default: return BC_NONE;
+    }
+}
+static VkFormat bc_plain_format(VkFormat f) {
+    switch (f) {
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: case VK_FORMAT_BC2_SRGB_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: case VK_FORMAT_BC7_SRGB_BLOCK:
+        return VK_FORMAT_R8G8B8A8_SRGB;
+    case VK_FORMAT_BC4_UNORM_BLOCK: return VK_FORMAT_R8_UNORM;
+    case VK_FORMAT_BC4_SNORM_BLOCK: return VK_FORMAT_R8_SNORM;
+    case VK_FORMAT_BC5_UNORM_BLOCK: return VK_FORMAT_R8G8_UNORM;
+    case VK_FORMAT_BC5_SNORM_BLOCK: return VK_FORMAT_R8G8_SNORM;
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK: case VK_FORMAT_BC6H_SFLOAT_BLOCK: return VK_FORMAT_R16G16B16A16_SFLOAT;
+    default: return VK_FORMAT_R8G8B8A8_UNORM;
+    }
 }
 
 static bool format_supports(VkFormat f, VkFormatFeatureFlags want) {
@@ -269,7 +299,12 @@ static void create_image(NvnTexture *t, TexBackend *b) {
     VkFormat vf = mf.vf;
     VkFormatFeatureFlags need = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
     b->astc_bw = b->astc_bh = 0;
-    if (!format_supports(vf, need)) {
+    b->bc_kind = BC_NONE;
+    int bck = bc_kind_of(vf);
+    if (bck && !format_supports(vf, need)) {  // mobile GPUs: decoded on the CPU into a plain image
+        b->bc_kind = (uint8_t)bck;
+        vf = bc_plain_format(vf);
+    } else if (!format_supports(vf, need)) {
         bool astc = vf >= VK_FORMAT_ASTC_4x4_UNORM_BLOCK && vf <= VK_FORMAT_ASTC_12x12_SRGB_BLOCK;
         const FormatInfo *fi = t->layout.fmt;
         if (astc && fi && fi->bpb == 16) {  // desktop GPUs: decoded on the CPU into an RGBA8 image of the same colour space
@@ -501,7 +536,7 @@ static void upload_texture(NvnTexture *t, TexBackend *b) {
     if (b->uploaded && h != b->data_hash) b->dynamic = true;
     b->data_hash = h;
     b->uploaded = true;
-    if (b->format != mf.vf && !b->astc_bw) return;  // unsupported format: nothing sensible to copy
+    if (b->format != mf.vf && !b->astc_bw && !b->bc_kind) return;  // unsupported format: nothing sensible to copy
     VkCommandBuffer cb = vk_upload_cmd();
     uint32_t layers = t->layout.layers ? t->layout.layers : 1;
     if (layers > b->layers && b->depth == 1) layers = b->layers;
@@ -511,6 +546,22 @@ static void upload_texture(NvnTexture *t, TexBackend *b) {
     for (uint32_t layer = 0; layer < layers; layer++) {
         for (uint32_t lv = 0; lv < levels; lv++) {
             LevelLayout l = tegra_level(&t->layout, lv);
+            if (b->bc_kind) {  // BC blocks -> linear block rows -> plain texels (bcdec.c)
+                uint32_t bs = bc_block_size(b->bc_kind), ts = bc_texel_size(b->bc_kind);
+                const uint8_t *src = (const uint8_t *)(uintptr_t)t->addr + layer * layer_size + l.offset;
+                uint8_t *blocks = malloc((uint64_t)l.wb * l.hb * bs);
+                if (linear) for (uint32_t y = 0; y < l.hb; y++) memcpy(blocks + (uint64_t)y * l.wb * bs, src + (uint64_t)y * t->stride, l.wb * bs);
+                else tegra_deswizzle(src, blocks, l.wb, l.hb, 1, bs, l.block_height_log2, l.block_depth_log2);
+                VkSpan s = vk_transient((uint64_t)l.w * l.h * ts, 16);
+                bc_decode(b->bc_kind, blocks, l.w, l.h, s.ptr);
+                free(blocks);
+                VkBufferImageCopy rg = {.bufferOffset = s.off, .bufferRowLength = l.w, .bufferImageHeight = l.h,
+                                        .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, lv, layer, 1},
+                                        .imageExtent = {l.w < level_w(b, lv) ? l.w : level_w(b, lv), l.h < level_h(b, lv) ? l.h : level_h(b, lv), 1}};
+                vk_dl_note_upload((void *)b->image, rg.imageExtent.width, rg.imageExtent.height, rg.imageSubresource.mipLevel);
+                vkCmdCopyBufferToImage(cb, s.buf, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &rg);
+                continue;
+            }
             if (b->astc_bw) {  // blocks -> linear block rows -> RGBA8 texels
                 const uint8_t *src = (const uint8_t *)(uintptr_t)t->addr + layer * layer_size + l.offset;
                 uint8_t *blocks = malloc((uint64_t)l.wb * l.hb * 16);
@@ -728,6 +779,7 @@ VkImageView vk_view(NvnTexture *t, const NvnTextureView *v, bool has_view, bool 
     if (v && (v->setmask & 4) && !(b->aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))) {
         VkFormat vf = fmt_of(v->format).vf;
         if (vk_format(t->format) == b->format) fmt = vf;  // (fallback images keep their own format)
+        else if (b->bc_kind && bc_kind_of(vf)) fmt = bc_plain_format(vf);  // (decoded BC: the same view in plain texels)
     }
     uint32_t lv0 = v && (v->setmask & 1) ? v->base_level : 0;
     uint32_t nlv = v && (v->setmask & 1) && v->num_levels ? v->num_levels : b->levels - (lv0 < b->levels ? lv0 : 0);

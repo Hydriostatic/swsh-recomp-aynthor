@@ -185,6 +185,49 @@ static void build_progress(double f, const char *step) {
                                                                                            : SETUP_COMPILING;
 }
 
+#ifdef __ANDROID__
+// No compiler on the device: the game code library is built on a PC or in CI (docs/ANDROID-THOR.md) and brought with
+// the game files. Looks for lasgame.so + lasgame.so.id under dir (a few levels) and copies them next to the game
+// files; nothing to do when they are there already.
+static bool find_lib(const char *dir, int depth, char *out, size_t n) {
+    char p[1100];
+    snprintf(p, sizeof p, "%s/" GAMELIB_NAME, dir);
+    if (is_file(p)) { snprintf(out, n, "%s", p); return true; }
+    if (depth >= 4) return false;
+    DIR *d = opendir(dir);
+    if (!d) return false;
+    bool found = false;
+    for (struct dirent *e; !found && (e = readdir(d));) {
+        if (e->d_name[0] == '.' || !strcmp(e->d_name, "romfs")) continue;
+        snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
+        if (is_dir(p)) found = find_lib(p, depth + 1, out, n);
+    }
+    closedir(d);
+    return found;
+}
+static bool build_code(void) {
+    if (gamelib_present(ROOT)) return true;
+    char lib[1100], id[1200];
+    if (!g_folder[0] || !find_lib(g_folder, 0, lib, sizeof lib)) {
+        LOG("[setup] no " GAMELIB_NAME " with the game files: build it for this version of the app (docs/ANDROID-THOR.md)\n");
+        g_state = SETUP_FAIL_TOOLS;
+        return false;
+    }
+    snprintf(id, sizeof id, "%s.id", lib);
+    g_state = SETUP_FINISHING;
+    g_phase0 = 0.15f, g_phase1 = 1.0f;
+    if (!romfs_copy_file(lib, ROOT "/" GAMELIB_NAME, copy_progress) || !romfs_copy_file(id, ROOT "/" GAMELIB_NAME ".id", NULL)) {
+        g_state = SETUP_FAIL_COPY;
+        return false;
+    }
+    if (!gamelib_present(ROOT)) {  // (its id is another version's)
+        LOG("[setup] %s was built for another version of the app\n", lib);
+        g_state = SETUP_FAIL_BUILD;
+        return false;
+    }
+    return true;
+}
+#else
 static bool build_code(void) {
     if (!gamebuild_available()) { g_state = SETUP_FAIL_TOOLS; return false; }
     int cores = SDL_GetNumLogicalCPUCores(), ram_gb = SDL_GetSystemRAM() / 1024;
@@ -198,6 +241,7 @@ static bool build_code(void) {
     }
     return true;
 }
+#endif
 
 static void *setup_thread(void *arg) {
     (void)arg;
@@ -241,7 +285,12 @@ static void *setup_thread(void *arg) {
         ok = romfs_copy_tree(f.exefs, ROOT "/exefs", copy_progress);
     if (ok && f.romfs_bin[0]) {
         g_phase0 = 0.01f, g_phase1 = 0.15f;
+#ifdef __ANDROID__
+        // (moved, not copied: shared storage has no hard links, and a handheld rarely has room for the image twice)
+        ok = rename(f.romfs_bin, ROOT "/romfs.bin") == 0 || romfs_copy_file(f.romfs_bin, ROOT "/romfs.bin", copy_progress);
+#else
         ok = romfs_copy_file(f.romfs_bin, ROOT "/romfs.bin", copy_progress);
+#endif
     } else if (ok) {
         g_state = SETUP_IMAGE;
         g_phase0 = 0.01f, g_phase1 = 0.15f;

@@ -1,0 +1,54 @@
+# The Android (AYN Thor) app: an APK with no game code in it. The game code library is built from your own game
+# files in a private repository (tools/android/private-repo-workflow.yml, docs/ANDROID-THOR.md).
+name: Android (AYN Thor)
+on:
+  push:
+    branches: [thor]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    env:
+      SDL_TAG: release-3.4.8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - name: NDK
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          sudo apt-get install -y ninja-build nasm > /dev/null
+      - name: Dependency cache
+        id: deps
+        uses: actions/cache@v4
+        with:
+          path: build/android-deps
+          key: android-deps-${{ hashFiles('tools/android/build_deps.sh') }}
+      - name: FFmpeg, shaderc, zstd
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: tools/android/build_deps.sh build/android-deps build/android-deps-work
+      - name: SDL3
+        run: git clone -q --depth 1 -b "$SDL_TAG" https://github.com/libsdl-org/SDL build/SDL
+      - name: Prepare
+        run: tools/android/prepare.sh build/SDL
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.11.1" }
+      - name: Build
+        working-directory: android
+        env:
+          DEPS_PREFIX: ${{ github.workspace }}/build/android-deps
+          SDL_SRC: ${{ github.workspace }}/build/SDL
+        run: gradle --no-daemon assembleRelease
+      - name: Collect
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/*.apk out/SwShRecomp-thor.apk
+          # libmain.so: what the game code library links against (tools/android/build_gamelib.sh)
+          find android/app/build/intermediates -path '*arm64-v8a/libmain.so' | head -1 | xargs -I{} cp {} out/libmain.so
+          cp build/android-src/GAMELIB_ID out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swshrecomp-thor
+          path: out/

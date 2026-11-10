@@ -1,6 +1,10 @@
 // Executes recorded NVN command lists with Vulkan (port of renderer.m; same structure, same behaviour).
 #include <SDL3/SDL_cpuinfo.h>
+#if defined(__x86_64__)
 #include <immintrin.h>
+#elif defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include <SDL3/SDL_timer.h>
 #include <float.h>
 #include <math.h>
@@ -436,6 +440,7 @@ VkDescriptorSet vk_alloc_set(VkDescriptorSetLayout layout) {
 // ================================================================== transient memory ring
 // The largest index of a draw (bounds the vertex data copied for it), ignoring the restart value: AVX2 where the CPU has it (the
 // game code needs it too), a plain loop elsewhere. A draw scans a few thousand indices: ~1.4 us scalar, ~0.15 us here.
+#if defined(__x86_64__)
 __attribute__((target("avx2"))) static uint32_t scan_max16_avx2(const uint16_t *q, uint32_t n, uint16_t restart) {
     __m256i acc = _mm256_setzero_si256(), rs = _mm256_set1_epi16((short)restart);
     uint32_t i = 0;
@@ -464,9 +469,37 @@ __attribute__((target("avx2"))) static uint32_t scan_max32_avx2(const uint32_t *
     for (; i < n; i++) if (q[i] != restart && q[i] > m) m = q[i];
     return m;
 }
+#else  // AArch64 (Android): the same scan with NEON, always there
+static uint32_t scan_max16_avx2(const uint16_t *q, uint32_t n, uint16_t restart) {
+    uint16x8_t acc = vdupq_n_u16(0), rs = vdupq_n_u16(restart);
+    uint32_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        uint16x8_t v = vld1q_u16(q + i);
+        acc = vmaxq_u16(acc, vbicq_u16(v, vceqq_u16(v, rs)));
+    }
+    uint32_t m = vmaxvq_u16(acc);
+    for (; i < n; i++) if (q[i] != restart && q[i] > m) m = q[i];
+    return m;
+}
+static uint32_t scan_max32_avx2(const uint32_t *q, uint32_t n, uint32_t restart) {
+    uint32x4_t acc = vdupq_n_u32(0), rs = vdupq_n_u32(restart);
+    uint32_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+        uint32x4_t v = vld1q_u32(q + i);
+        acc = vmaxq_u32(acc, vbicq_u32(v, vceqq_u32(v, rs)));
+    }
+    uint32_t m = vmaxvq_u32(acc);
+    for (; i < n; i++) if (q[i] != restart && q[i] > m) m = q[i];
+    return m;
+}
+#endif
 static uint32_t scan_max_index(const void *src, uint32_t isz, uint32_t n, uint32_t restart) {
+#if defined(__x86_64__)
     static int avx2 = -1;
     if (avx2 < 0) avx2 = __builtin_cpu_supports("avx2");
+#else
+    const int avx2 = 1;  // (the NEON versions above)
+#endif
     uint32_t m = 0;
     if (isz == 2) {
         if (avx2) return scan_max16_avx2(src, n, (uint16_t)restart);
@@ -4611,7 +4644,7 @@ static void copy_buffer_to_texture(uint64_t src, const TexRefRec *dst) {
     watch_tex(t, "buffer upload", NULL);
     renderer_mark_gpu_owned(t);
     if (b->aspect == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) return;
-    if (b->astc_bw) {  // (blocks would need the CPU decode: not seen in the game yet)
+    if (b->astc_bw || b->bc_kind) {  // (blocks would need the CPU decode: not seen in the game yet)
         static int nlog;
         if (nlog++ < 5) LOG("[vk] buffer -> ASTC texture copy skipped (%ux%u)\n", t->width, t->height);
         return;
