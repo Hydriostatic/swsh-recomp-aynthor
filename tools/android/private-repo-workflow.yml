@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { path: game, lfs: true }
       - uses: actions/checkout@v4
-        with: { repository: Hydriostatic/swsh-recomp, ref: "${{ inputs.ref }}", path: app }
+        with: { repository: Hydriostatic/swsh-recomp-aynthor, ref: "${{ inputs.ref }}", path: app }
       - name: NDK
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" > /dev/null
@@ -27,9 +27,9 @@ jobs:
         working-directory: app
         run: |
           sha=$(git rev-parse HEAD)
-          run=$(gh run list -R Hydriostatic/swsh-recomp -w "Android (AYN Thor)" -c "$sha" -s success --json databaseId -q '.[0].databaseId')
+          run=$(gh run list -R Hydriostatic/swsh-recomp-aynthor -w "Android (AYN Thor)" -c "$sha" -s success --json databaseId -q '.[0].databaseId')
           [ -n "$run" ] || { echo "no successful app build of $sha yet"; exit 1; }
-          gh run download "$run" -R Hydriostatic/swsh-recomp -n swshrecomp-thor -D ../appbuild
+          gh run download "$run" -R Hydriostatic/swsh-recomp-aynthor -n swshrecomp-thor -D ../appbuild
       - name: Build the game code
         working-directory: app
         run: |
