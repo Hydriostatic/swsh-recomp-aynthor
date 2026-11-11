@@ -1,7 +1,7 @@
 #!/bin/bash
 # The game code library for the Android app, from your own game files: tools/android/build_gamelib.sh <exefs dir> <out dir>
 # Needs: tools/android/prepare.sh run first, the app's libmain.so (ANDROID_LIBMAIN, the library links against it),
-# $ANDROID_NDK, python3 with capstone + unicorn. Writes <out>/lasgame.so and lasgame.so.id: copy both, with the game
+# $ANDROID_NDK, python3 with capstone, unicorn and lz4. Writes <out>/lasgame.so and lasgame.so.id: copy both, with the game
 # files, into Android/data/io.github.hydriostatic.swshrecomp/files/import on the device (docs/ANDROID-THOR.md).
 set -euo pipefail
 EXEFS=$(realpath "${1:?exefs dir}"); OUT=$(mkdir -p "${2:?out dir}" && realpath "$2")

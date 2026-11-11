@@ -21,7 +21,7 @@ jobs:
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" > /dev/null
           echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          pip install capstone unicorn
+          pip install capstone unicorn lz4
       - name: The app build's libmain.so
         env: { GH_TOKEN: "${{ github.token }}" }
         working-directory: app
