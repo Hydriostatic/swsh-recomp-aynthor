@@ -226,7 +226,6 @@ static void game_files_section(SDL_Window *win) {
 #endif
         ImGui::PopTextWrapPos();
     }
-#ifdef __ANDROID__
     if (ui_button(T("Select game folder...", "Selecionar pasta do jogo..."), -1))
         pick_game_folder(win);
 }
