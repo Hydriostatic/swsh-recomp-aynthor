@@ -157,6 +157,15 @@ static SDL_Scancode cfg_key(void) {
 
 bool menu_handle_event(const SDL_Event *e) {
     static bool back_down, start_down;
+#ifdef __ANDROID__
+    SDL_Event esc;  // Android's Back (trapped: runtime/platform/android.c) works as Esc - the menu, or closing it
+    if ((e->type == SDL_EVENT_KEY_DOWN || e->type == SDL_EVENT_KEY_UP) && e->key.scancode == SDL_SCANCODE_AC_BACK) {
+        esc = *e;
+        esc.key.scancode = SDL_SCANCODE_ESCAPE;
+        esc.key.key = SDLK_ESCAPE;
+        e = &esc;
+    }
+#endif
     if (e->type == SDL_EVENT_KEY_DOWN) g_last_pad = false;
     if (e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) g_last_pad = true;
     bool typing = g_kbd.load() == 1;  // (the name entry: keys are text, not shortcuts)

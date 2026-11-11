@@ -42,6 +42,10 @@ fixing starts.
    The setup copies `exefs/` and builds the RomFS image (or copies `romfs.bin`) into the app's folder, so plan for
    about 15 GB free. Your folder is left as it was.
 
+Controls: every controller is opened, and the one you press buttons on is the one the game reads, so the Thor's
+built-in controls work even when Android lists other input devices first (the log names each one: `[input] gamepad`).
+Android's Back works as Esc: it opens and closes the in-game menu.
+
 Logs: `.../files/lasrecomp.log` (and `lasrecomp-prev.log`); logcat tag `SwShRecomp`.
 Settings that would be environment variables on PC go one per line (`NAME=value`) in `.../files/larecomp.env`, for
 example `LARECOMP_VK_PRESENT=fifo`.

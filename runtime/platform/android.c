@@ -346,6 +346,10 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
     unpack_asset("Baloo2-SemiBold.ttf");
     unpack_asset("icon.png");
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    // Back (a handheld's controller often sends it for Select / its back button) is a key for the game and the
+    // menus, not "close the app"; the built-in controls count as a gamepad even while nothing else is plugged in
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_AddEventWatch(lifecycle_watch, NULL);
 
     MainArgs a = {argc, argv, 0};

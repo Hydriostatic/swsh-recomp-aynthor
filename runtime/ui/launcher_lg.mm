@@ -435,6 +435,8 @@ static bool window_button(const char *id, bool close, float size) {
 }
 
 // ------------------------------------------------------------------ the start screen
+extern "C" void input_open_all_gamepads(void);  // runtime/hle/input.c
+
 extern "C" void launcher_lg_run(const char *root) {
     (void)root;
     ui_pick_language();
@@ -452,6 +454,8 @@ extern "C" void launcher_lg_run(const char *root) {
     ui_style();
     UiScaler scaler;
     ImGui_ImplSDL3_InitForVulkan(win);
+    ImGui_ImplSDL3_SetGamepadMode(ImGui_ImplSDL3_GamepadMode_AutoAll);  // (every controller: runtime/hle/input.c)
+    input_open_all_gamepads();
     vk_imgui_backend_init();
     ImTextureID icon = icon_texture();
 

@@ -211,14 +211,56 @@ int input_pad_family(void) {
     return env >= 0 ? env : pad_family;
 }
 
+// Every controller is opened (SDL only reports the buttons of open ones), and the one played with is the one whose
+// buttons or sticks moved last: a handheld's built-in controls are not always the first gamepad the system lists
+// (the AYN Thor: virtual and system input devices come first on Android), and a pad plugged in takes over at once.
+#define MAX_PADS 8
+static SDL_Gamepad *pads[MAX_PADS];
+static int npads;
+static void open_pad(SDL_JoystickID id) {
+    for (int i = 0; i < npads; i++) if (SDL_GetGamepadID(pads[i]) == id) return;
+    if (npads == MAX_PADS) return;
+    SDL_Gamepad *g = SDL_OpenGamepad(id);
+    if (!g) return;
+    pads[npads++] = g;
+    char guid[64];
+    SDL_GUIDToString(SDL_GetGamepadGUIDForID(id), guid, sizeof guid);
+    LOG("[input] gamepad %d: %s (type %d, guid %s)\n", (int)id, SDL_GetGamepadName(g), (int)SDL_GetGamepadType(g), guid);
+    if (!pad) { pad = g; note_family(); }
+}
+static void close_pad(SDL_JoystickID id) {
+    for (int i = 0; i < npads; i++)
+        if (SDL_GetGamepadID(pads[i]) == id) {
+            if (pad == pads[i]) pad = NULL;
+            SDL_CloseGamepad(pads[i]);
+            pads[i] = pads[--npads];
+            break;
+        }
+    if (!pad && npads) pad = pads[0];
+    note_family();
+}
+static void make_active(SDL_JoystickID id) {
+    if (pad && SDL_GetGamepadID(pad) == id) return;
+    for (int i = 0; i < npads; i++)
+        if (SDL_GetGamepadID(pads[i]) == id) {
+            pad = pads[i];
+            LOG("[input] playing with: %s\n", SDL_GetGamepadName(pad));
+            note_family();
+            return;
+        }
+}
+void input_open_all_gamepads(void) {  // (also from the start screen: its menus listen to every controller too)
+    int n = 0;
+    SDL_JoystickID *ids = SDL_GetGamepads(&n);
+    for (int i = 0; i < n; i++) open_pad(ids[i]);
+    SDL_free(ids);
+}
+
 void input_handle_event(const SDL_Event *e) {
     static bool scanned;  // pads present at startup: their ADDED event may have gone to the start screen's loop
     if (!scanned) {
         scanned = true;
-        int n = 0;
-        SDL_JoystickID *ids = SDL_GetGamepads(&n);
-        if (n > 0 && !pad) { pad = SDL_OpenGamepad(ids[0]); LOG("[input] gamepad: %s\n", SDL_GetGamepadName(pad)); note_family(); }
-        SDL_free(ids);
+        input_open_all_gamepads();
     }
     switch (e->type) {
     case SDL_EVENT_KEY_DOWN: case SDL_EVENT_KEY_UP:
@@ -266,13 +308,21 @@ void input_handle_event(const SDL_Event *e) {
         mouse_release();
         break;
     case SDL_EVENT_GAMEPAD_ADDED:
-        if (!pad) { pad = SDL_OpenGamepad(e->gdevice.which); LOG("[input] gamepad: %s\n", SDL_GetGamepadName(pad)); note_family(); }
+        open_pad(e->gdevice.which);
         break;
     case SDL_EVENT_GAMEPAD_REMOVED:
-        if (pad && SDL_GetGamepadID(pad) == e->gdevice.which) { SDL_CloseGamepad(pad); pad = NULL; note_family(); }
+        close_pad(e->gdevice.which);
         recompute_pad();
         break;
-    case SDL_EVENT_GAMEPAD_AXIS_MOTION: case SDL_EVENT_GAMEPAD_BUTTON_DOWN: case SDL_EVENT_GAMEPAD_BUTTON_UP:
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        make_active(e->gbutton.which);
+        recompute_pad();
+        break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:  // (a real push, not a resting stick's noise)
+        if (e->gaxis.value > 12000 || e->gaxis.value < -12000) make_active(e->gaxis.which);
+        recompute_pad();
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
         recompute_pad();
         break;
     }
