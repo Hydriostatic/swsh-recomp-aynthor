@@ -36,6 +36,7 @@ target_compile_options(main PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2 -g -fno-strict-a
 target_link_directories(main PRIVATE ${DEPS_PREFIX}/lib)
 # (the game code library, loaded later, calls into this one: everything stays exported, as -rdynamic on Linux;
 #  16 KB pages: Android 15 devices need them, and the guest maps with PLAT_PAGE = 16 KB anyway)
-target_link_options(main PRIVATE -Wl,--export-dynamic -Wl,-z,max-page-size=16384)
+target_link_options(main PRIVATE -Wl,--export-dynamic -Wl,-z,max-page-size=16384 -Wl,-Bsymbolic -Wl,--error-limit=0)
+# (-Bsymbolic: FFmpeg's AArch64 assembly addresses its tables directly, as FFmpeg says for static libraries in a shared one)
 target_link_libraries(main PRIVATE SDL3::SDL3-shared avformat avcodec avutil swscale swresample shaderc_combined zstd z
                       vulkan android log m dl)
