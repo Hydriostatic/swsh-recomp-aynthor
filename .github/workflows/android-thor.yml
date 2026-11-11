@@ -33,6 +33,15 @@ jobs:
         run: git clone -q --depth 1 -b "$SDL_TAG" https://github.com/libsdl-org/SDL "$RUNNER_TEMP/SDL"  # (outside the workspace: its gradle wrapper)
       - name: Prepare
         run: tools/android/prepare.sh "$RUNNER_TEMP/SDL"
+      - name: Native code (every compile error at once)
+        env:
+          DEPS_PREFIX: ${{ github.workspace }}/build/android-deps
+        run: |
+          cmake -S android -B build/native-check -G Ninja -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+                -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-33 -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Release \
+                -DDEPS_PREFIX="$DEPS_PREFIX" -DSDL_SRC="$RUNNER_TEMP/SDL"
+          ninja -C build/native-check -k 0 main 2>&1 | tee build/native-check.log | grep -E "error:|undefined" | sort -u | head -200
+          test ${PIPESTATUS[0]} -eq 0
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.11.1", validate-wrappers: false }
       - name: Build
