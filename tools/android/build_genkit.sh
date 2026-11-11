@@ -61,8 +61,8 @@ cp "$S"/runtime/{cpu.h,simd.h,simd_fp.h,gamelib.h} "$S/tools/gamelib_entry.c" "$
 
 # 4. zig: the aarch64-linux build runs on the device (a static binary); the x86_64 one here finds what it needs
 VER=0.17.0
-(cd "$R" && ZIG_TARGET=aarch64-linux tools/fetch_zig.sh && rm -rf "$W/zig-arm" && mv build/zig "$W/zig-arm" &&
-          ZIG_TARGET=x86_64-linux tools/fetch_zig.sh && rm -rf "$W/zig-x86" && mv build/zig "$W/zig-x86")
+(cd "$R" && ZIG_TARGET=aarch64-linux bash tools/fetch_zig.sh && rm -rf "$W/zig-arm" && mv build/zig "$W/zig-arm" &&
+          ZIG_TARGET=x86_64-linux bash tools/fetch_zig.sh && rm -rf "$W/zig-x86" && mv build/zig "$W/zig-x86")
 cp "$W/zig-arm/zig" "$JNI/libzig.so"
 . "$R/tools/android/env.sh" "$S"
 P=$W/zigprobe
