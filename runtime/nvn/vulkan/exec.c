@@ -1334,8 +1334,15 @@ const char *renderer_stats(void) {
             if (!g_waitprof[i].n) continue;
             uint64_t off = 0;
             const char *mod = plat_symbol((uint64_t)(uintptr_t)g_waitprof[i].ra, &off);
+#ifdef _WIN32
             extern char __ImageBase;  // (the exe: an offset from its base, for addr2line -e lasrecomp.exe 0x140000000+off)
-            if (!mod) mod = "exe", off = (uint64_t)((char *)g_waitprof[i].ra - &__ImageBase);
+#define IMAGE_BASE __ImageBase
+#else
+            extern char __ehdr_start;  // (ELF: the binary's own start, defined by the linker)
+#define IMAGE_BASE __ehdr_start
+#endif
+            if (!mod) mod = "exe", off = (uint64_t)((char *)g_waitprof[i].ra - &IMAGE_BASE);
+#undef IMAGE_BASE
             n += snprintf(stats_text + n, sizeof stats_text - n, " %s+%llx %.0fms/%llu", mod, (unsigned long long)off,
                           g_waitprof[i].ns / 1e6, (unsigned long long)g_waitprof[i].n);
             g_waitprof[i].ns = g_waitprof[i].n = 0;
