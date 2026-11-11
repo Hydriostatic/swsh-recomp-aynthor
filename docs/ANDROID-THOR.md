@@ -15,32 +15,31 @@ fixing starts.
 - **BC textures decoded on the CPU** (`runtime/nvn/bcdec.c`, third_party/bcdec). Adreno has ASTC but no BC1-7, which
   almost every texture in the game uses. Large levels are decoded on 4 threads. This is the first suspect for
   stutter.
-- **No compiler on the device.** The game code library (`lasgame.so`) is built in your private repository and copied
-  to the device along with the game files.
+- **The game code is built on the device**, as the PC release's start screen does it: the APK carries Python 3.13,
+  capstone and unicorn built for Android, and zig's aarch64 build (`tools/android/build_genkit.sh`). The first setup
+  takes one to two hours on the Thor. A `lasgame.so` + `lasgame.so.id` found in the game folder is used instead.
 - **Android surfaces.** The app waits while it's in the background and makes a new surface and swapchain when it
   comes back. RGBA swapchain formats are accepted. Vulkan features the driver lacks are dropped and listed in the log
   instead of stopping vkCreateDevice.
 
 ## Building
 
-1. **The app**: push to `thor` (or run the workflow by hand). `.github/workflows/android-thor.yml` builds FFmpeg,
-   shaderc and zstd for Android (cached), SDL 3, and the APK. The artifact `swshrecomp-thor` holds
-   `SwShRecomp-thor.apk`, `libmain.so` and `GAMELIB_ID`.
-2. **The game code**: in your private repository with `exefs/` from your own Sword 1.3.2, add
-   `tools/android/private-repo-workflow.yml` as `.github/workflows/gamelib.yml` and run it. It links against the
-   `libmain.so` of the same commit. The artifact `lasgame-thor` holds `lasgame.so` and `lasgame.so.id`, and it stays
-   private. Rebuild it whenever the app's `GAMELIB_ID` changes: an app only loads game code built for it.
+Push to `thor` (or run the workflow by hand). `.github/workflows/android-thor.yml` builds FFmpeg, shaderc and zstd,
+the game code builder (Python, capstone, unicorn, zig) and SDL 3, all cached, then the APK. The artifact
+`swshrecomp-thor` holds `SwShRecomp-thor.apk`. It contains no game code and no game files.
+
+`tools/android/private-repo-workflow.yml` still builds a `lasgame.so` in CI from a private repository, if you want
+to skip building it on the device.
 
 ## Setting it up on the Thor
 
 1. Install the APK and open it.
-2. Put these anywhere on the Thor's storage or SD card, in one folder:
-   - `exefs/` and `romfs/` (or `romfs.bin`) from your own extracted game, and
-   - `lasgame.so` and `lasgame.so.id`. They can also go in `Android/data/io.github.hydriostatic.swshrecomp/files/import/`.
+2. Put `exefs/` and `romfs/` (or `romfs.bin`) from your own extracted game in one folder, anywhere on the Thor's
+   storage or SD card.
 3. On the start screen, press **Select game folder...**. The first time, Android asks for "All files access" for the
    app: allow it and press Back, and the folder picker opens. Pick the folder.
-   The setup copies `exefs/` and builds the RomFS image (or copies `romfs.bin`) into the app's folder, so plan for
-   about 15 GB free. Your folder is left as it was.
+   The setup copies `exefs/`, builds the RomFS image (or copies `romfs.bin`), then builds the game code. Keep the
+   app open and the Thor plugged in. Plan for about 20 GB free. Your folder is left as it was.
 
 Controls: every controller is opened, and the one you press buttons on is the one the game reads, so the Thor's
 built-in controls work even when Android lists other input devices first (the log names each one: `[input] gamepad`).
