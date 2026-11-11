@@ -7,6 +7,8 @@ API=33
 TC=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64
 CMAKE_TC="-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-$API -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$P"
 cd "$W"
+[ -d vma ] || git clone -q --depth 1 -b v3.1.0 https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator vma
+mkdir -p "$P/include" && cp vma/include/vk_mem_alloc.h "$P/include/"
 [ -d zstd ] || git clone -q --depth 1 -b v1.5.6 https://github.com/facebook/zstd
 cmake -S zstd/build/cmake -B zstd-b -G Ninja $CMAKE_TC -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF
 cmake --build zstd-b && cmake --install zstd-b
