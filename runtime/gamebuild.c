@@ -117,6 +117,31 @@ static bool file_exists(const char *p) {
     return stat(p, &st) == 0;
 }
 
+#ifdef __ANDROID__
+// Android: python and zig installed with the APK (its library folder: the only place an app may run programs
+// from), their files unpacked from assets/genkit.zip by MainActivity (<private>/res, done when res/genkit.ok
+// exists). tools/android/build_genkit.sh makes all of it.
+static bool find_tools(Tools *t) {
+    memset(t, 0, sizeof *t);
+    const char *lib = plat_android_lib_dir(), *priv = plat_android_private_dir();
+    char ok[1100];
+    snprintf(ok, sizeof ok, "%s/res/genkit.ok", priv);
+    for (int i = 0; i < 600 && !file_exists(ok); i++) {  // (still unpacking right after the first start: up to 2 min)
+        if (i == 0) LOG("[gamebuild] waiting for the builder's files to be unpacked\n");
+        plat_sleep_until_ns(plat_now_ns() + 200000000ull);
+    }
+    snprintf(t->gen, sizeof t->gen, "%s/libpyexe.so", lib);
+    snprintf(t->gen_script, sizeof t->gen_script, "%s/res/tools/gen.py", priv);
+    snprintf(t->cc, sizeof t->cc, "%s/libzig.so", lib);
+    t->zig = true;
+    snprintf(t->inc, sizeof t->inc, "%s/res/gamelib-src", priv);
+    snprintf(t->entry, sizeof t->entry, "%s/res/gamelib-src/gamelib_entry.c", priv);
+    snprintf(t->hle, sizeof t->hle, "%s/res/gamelib-src/hle_symbols.txt", priv);
+    bool have = file_exists(ok) && file_exists(t->gen) && file_exists(t->cc) && file_exists(t->gen_script) && file_exists(t->entry);
+    if (!have) LOG("[gamebuild] builder missing: %s %s %s\n", t->gen, t->cc, ok);
+    return have;
+}
+#else
 static bool find_tools(Tools *t) {
     memset(t, 0, sizeof *t);
     const char *e = getenv("LARECOMP_GEN");
@@ -151,6 +176,7 @@ static bool find_tools(Tools *t) {
 #endif
     return true;
 }
+#endif
 
 bool gamebuild_available(void) {
     Tools t;
@@ -449,6 +475,24 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
             add(&a, at);
             add(&a, t.implib);
         } else
+#elif defined(__ANDROID__)
+        {  // the linker itself (tools/android/build_genkit.sh checks this same link): against the app's libmain.so,
+           // whose functions the game code calls, and zig's runtime library built ahead of time
+            char opt[1200];
+            add(&a, t.cc);
+            add(&a, "ld.lld");
+            add(&a, "-shared");
+            add(&a, "-z");
+            add(&a, "max-page-size=16384");
+            add(&a, "-o");
+            add(&a, tmp);
+            add(&a, at);
+            snprintf(opt, sizeof opt, "%s/libmain.so", plat_android_lib_dir());
+            add(&a, opt);
+            snprintf(opt, sizeof opt, "%s/res/zig/rt/libcompiler_rt.a", plat_android_private_dir());
+            add(&a, opt);
+        }
+        if (0)
 #endif
         {
             compiler(&a, &t);

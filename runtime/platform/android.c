@@ -270,14 +270,75 @@ void plat_crash_handler_install(void) {
     sigaction(SIGABRT, &sa, NULL);
 }
 
-// ---- child processes: none on Android (the callers report the failure: runtime/gamebuild.c, runtime/mods.c)
+// ---- child processes: the game code builder (runtime/gamebuild.c) runs python and zig, which the APK installs in
+// its library folder - the one place an app may run programs from (tools/android/build_genkit.sh)
+#include <spawn.h>
+#include <sys/wait.h>
+extern char **environ;
+
 PlatProc plat_spawn(const char *const argv[], const char *log_path, bool append_log) {
-    (void)log_path, (void)append_log;
-    fprintf(stderr, "[android] not started (no child processes here): %s\n", argv && argv[0] ? argv[0] : "?");
-    return 0;
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, 1, log_path ? log_path : "/dev/null",
+                                     O_WRONLY | O_CREAT | (append_log ? O_APPEND : O_TRUNC), 0644);
+    posix_spawn_file_actions_adddup2(&fa, 1, 2);
+    posix_spawnattr_t at;  // (its own process group: plat_proc_kill ends what it starts, e.g. zig's clang)
+    posix_spawnattr_init(&at);
+    posix_spawnattr_setflags(&at, POSIX_SPAWN_SETPGROUP);
+    posix_spawnattr_setpgroup(&at, 0);
+    pid_t pid;
+    int rc = posix_spawn(&pid, argv[0], &fa, &at, (char *const *)argv, environ);
+    posix_spawnattr_destroy(&at);
+    posix_spawn_file_actions_destroy(&fa);
+    if (rc) fprintf(stderr, "[android] can't start %s: %s\n", argv[0], strerror(rc));
+    return rc ? 0 : (PlatProc)pid;
 }
-void plat_proc_kill(PlatProc p) { (void)p; }
-int plat_proc_wait(PlatProc p, bool block) { (void)p, (void)block; return 255; }
+
+void plat_proc_kill(PlatProc p) {
+    kill(-(pid_t)p, SIGKILL);
+    waitpid((pid_t)p, NULL, 0);
+}
+
+int plat_proc_wait(PlatProc p, bool block) {
+    int st = 0;
+    pid_t r = waitpid((pid_t)p, &st, block ? 0 : WNOHANG);
+    if (r == 0) return -1;
+    if (r < 0) return 255;
+    return WIFEXITED(st) ? WEXITSTATUS(st) : 255;
+}
+
+// The APK's library folder (libmain.so's: where the builder's programs are) and the unpacked builder files
+// (MainActivity unpacks assets/genkit.zip into <private>/res; res/genkit.ok when done).
+static char g_libdir[900];
+const char *plat_android_lib_dir(void) {
+    if (!g_libdir[0]) {
+        Dl_info di = {0};
+        if (dladdr((void *)plat_android_lib_dir, &di) && di.dli_fname) {
+            snprintf(g_libdir, sizeof g_libdir, "%s", di.dli_fname);
+            char *s = strrchr(g_libdir, '/');
+            if (s) *s = 0;
+        }
+    }
+    return g_libdir;
+}
+const char *plat_android_private_dir(void) { return g_private; }
+
+// What the builder's programs need to find their parts (set once: children inherit it)
+static void builder_env(void) {
+    const char *lib = plat_android_lib_dir();
+    char v[2400];
+    setenv("LD_LIBRARY_PATH", lib, 1);  // (libpyexe.so -> libpython3.13.so and its libraries)
+    snprintf(v, sizeof v, "%s/res/python", g_private);
+    setenv("PYTHONHOME", v, 1);
+    snprintf(v, sizeof v, "%s/res/pylib:%s/res/tools", g_private, g_private);
+    setenv("PYTHONPATH", v, 1);
+    setenv("PYTHONHASHSEED", "0", 1);  // (the same output every run, as the PC's lasgen)
+    setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
+    setenv("LIBCAPSTONE_PATH", lib, 1);
+    setenv("LIBUNICORN_PATH", lib, 1);
+    snprintf(v, sizeof v, "%s/res/zig/lib", g_private);
+    setenv("ZIG_LIB_DIR", v, 1);
+}
 
 static int rm_entry(const char *path, const struct stat *sb, int flag, struct FTW *ftw) {
     (void)sb, (void)flag, (void)ftw;
@@ -343,6 +404,7 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
         }
         fclose(f);
     }
+    builder_env();
     unpack_asset("Baloo2-SemiBold.ttf");
     unpack_asset("icon.png");
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");

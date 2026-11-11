@@ -86,6 +86,8 @@ int plat_android_surface_generation(void);     // counts the returns to the fore
 // Opens the system folder picker (after asking for all-files access); the folder's path comes back, on another
 // thread, to launcher_android_folder_picked (runtime/ui/launcher_lg.mm).
 void plat_android_pick_folder(void);
+const char *plat_android_lib_dir(void);      // the APK's installed libraries (and the game code builder's programs)
+const char *plat_android_private_dir(void);  // the app's private folder
 #endif
 
 // ---- diagnostics

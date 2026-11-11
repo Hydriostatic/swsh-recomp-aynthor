@@ -42,6 +42,14 @@ jobs:
                 -DDEPS_PREFIX="$DEPS_PREFIX" -DSDL_SRC="$RUNNER_TEMP/SDL"
           ninja -C build/native-check -k 0 main 2>&1 | tee build/native-check.log | grep -E "error:|undefined" | sort -u | head -200
           test ${PIPESTATUS[0]} -eq 0
+      - name: Game code builder cache
+        id: genkit
+        uses: actions/cache@v4
+        with:
+          path: build/genkit-work
+          key: genkit-${{ hashFiles('tools/android/build_genkit.sh') }}
+      - name: Game code builder (python, capstone, unicorn, zig for the device)
+        run: tools/android/build_genkit.sh build/genkit-work
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.11.1", validate-wrappers: false }
       - name: Build

@@ -8,6 +8,7 @@ EXEFS=$(realpath "${1:?exefs dir}"); OUT=$(mkdir -p "${2:?out dir}" && realpath 
 LIBMAIN=$(realpath "${ANDROID_LIBMAIN:?path to the app\'s libmain.so}")
 S=build/android-src
 . tools/android/env.sh $S
+GENFLAGS_ANDROID=${GENFLAGS_ANDROID/-target aarch64-linux-musl /}  # (the NDK's clang has its own target)
 CC="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-linux-android33"
 GEN=build/android-gen
 rm -rf $GEN && mkdir -p $GEN

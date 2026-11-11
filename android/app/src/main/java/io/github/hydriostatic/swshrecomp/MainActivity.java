@@ -10,7 +10,16 @@ import android.util.Log;
 
 import org.libsdl.app.SDLActivity;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 // SDL's activity runs SDL_main of libmain.so (runtime/platform/android.c) on its own thread; the bottom screen of the
 // AYN Thor shows the runtime's information panel (DualScreen).
@@ -29,6 +38,57 @@ public class MainActivity extends SDLActivity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         dual = new DualScreen(this);
+        new Thread(this::unpackGenkit, "genkit").start();
+    }
+
+    // ---- the game code builder's files (assets/genkit.zip: tools/android/build_genkit.sh) into <files>/res, once per
+    // version of the app; runtime/gamebuild.c waits for res/genkit.ok
+    private void unpackGenkit() {
+        File res = new File(getFilesDir(), "res"), ok = new File(res, "genkit.ok");
+        try {
+            String want = readVersion(getAssets().open("genkit.zip"));
+            if (want == null) { Log.e(TAG, "genkit.zip: no VERSION"); return; }
+            if (ok.exists() && want.equals(new String(Files.readAllBytes(ok.toPath()), StandardCharsets.UTF_8))) return;
+            ok.delete();
+            for (String d : new String[] {"python", "pylib", "tools", "gamelib-src", "zig"}) deleteTree(new File(res, d));
+            long t0 = System.currentTimeMillis(), n = 0;
+            byte[] buf = new byte[1 << 16];
+            try (ZipInputStream z = new ZipInputStream(new BufferedInputStream(getAssets().open("genkit.zip"), 1 << 16))) {
+                for (ZipEntry e; (e = z.getNextEntry()) != null; ) {
+                    File f = new File(res, e.getName());
+                    if (!f.getCanonicalPath().startsWith(res.getCanonicalPath() + File.separator)) continue;
+                    if (e.isDirectory()) { f.mkdirs(); continue; }
+                    f.getParentFile().mkdirs();
+                    try (OutputStream o = new FileOutputStream(f)) {
+                        for (int k; (k = z.read(buf)) > 0; ) o.write(buf, 0, k);
+                    }
+                    n++;
+                }
+            }
+            try (OutputStream o = new FileOutputStream(ok)) { o.write(want.getBytes(StandardCharsets.UTF_8)); }
+            Log.i(TAG, "genkit: " + n + " files in " + (System.currentTimeMillis() - t0) + " ms");
+        } catch (IOException e) {
+            Log.e(TAG, "genkit: " + e);
+        }
+    }
+
+    private static String readVersion(InputStream in) throws IOException {
+        try (ZipInputStream z = new ZipInputStream(new BufferedInputStream(in, 1 << 16))) {
+            for (ZipEntry e; (e = z.getNextEntry()) != null; )
+                if (e.getName().equals("VERSION")) {
+                    java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[4096];
+                    for (int k; (k = z.read(buf)) > 0; ) o.write(buf, 0, k);
+                    return o.toString("UTF-8").trim();
+                }
+        }
+        return null;
+    }
+
+    private static void deleteTree(File f) {
+        File[] kids = f.listFiles();
+        if (kids != null) for (File k : kids) deleteTree(k);
+        f.delete();
     }
 
     @Override

@@ -35,7 +35,7 @@ mv "$DL/$NAME" build/zig
 L=build/zig/lib
 case "${TARGET#*-}" in
     macos)   inc='darwin'; src='darwin' ;;
-    linux)   inc='linux|glibc'; src='glibc' ;;
+    linux)   inc='linux|glibc|musl'; src='glibc|musl' ;;  # (musl: the Android build's target, tools/android/build_genkit.sh)
     windows) inc='windows|mingw'; src='mingw' ;;
 esac
 for d in "$L"/libc/include/*; do basename "$d" | grep -qE "$inc" || rm -rf "$d"; done

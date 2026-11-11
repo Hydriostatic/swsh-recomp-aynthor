@@ -11,6 +11,7 @@ LC_ALL=C tr -d '\r' < third_party/smaa/SMAA.hlsl | LC_ALL=C tr '\200-\377' '?' |
     sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/\\n"/' > build/android-src/inc/smaa_hlsl.inc
 . tools/android/env.sh build/android-src
 echo "$GAMELIB_ID_ANDROID" > build/android-src/GAMELIB_ID
+echo "$GAMELIB_CFLAGS_ANDROID" > build/android-src/GAMELIB_CFLAGS
 mkdir -p android/app/src/main/java/org/libsdl
 rm -rf android/app/src/main/java/org/libsdl/app
 cp -R "$SDL/android-project/app/src/main/java/org/libsdl/app" android/app/src/main/java/org/libsdl/

@@ -5,3 +5,4 @@ app/.cxx/
 local.properties
 app/src/main/java/org/libsdl/
 app/src/main/assets/
+app/src/main/jniLibs/

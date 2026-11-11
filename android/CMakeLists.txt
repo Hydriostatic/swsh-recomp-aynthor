@@ -10,6 +10,8 @@ if(NOT EXISTS ${S}/GAMELIB_ID)
 endif()
 file(READ ${S}/GAMELIB_ID GAMELIB_ID)
 string(STRIP "${GAMELIB_ID}" GAMELIB_ID)
+file(READ ${S}/GAMELIB_CFLAGS GAMELIB_CFLAGS)  # (the device's zig compiles the game code with these: gamebuild.c)
+string(STRIP "${GAMELIB_CFLAGS}" GAMELIB_CFLAGS)
 set(DEPS_PREFIX "" CACHE PATH "prefix with FFmpeg, shaderc and zstd built for Android arm64")
 set(SDL_SRC "" CACHE PATH "SDL3 source tree")
 
@@ -30,7 +32,7 @@ set_source_files_properties(${UI_MM} PROPERTIES LANGUAGE CXX COMPILE_OPTIONS "-x
 add_library(main SHARED ${RT_C} ${RT_CXX} ${UI_MM} ${IMGUI_SRC} ${S}/runtime/platform/android.c)
 target_include_directories(main PRIVATE ${S}/runtime ${S}/runtime/nvn ${S}/inc ${S}/third_party/smaa/Textures
                            ${IMGUI} ${IMGUI}/backends ${DEPS_PREFIX}/include)
-target_compile_definitions(main PRIVATE GAMELIB_ID="${GAMELIB_ID}" GAMELIB_CFLAGS="" GAMELIB_SHARED="-shared")
+target_compile_definitions(main PRIVATE GAMELIB_ID="${GAMELIB_ID}" GAMELIB_CFLAGS="${GAMELIB_CFLAGS}" GAMELIB_SHARED="-shared")
 target_compile_options(main PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2 -g -fno-strict-aliasing -Wall -Wno-unused-function -Wno-format>
                        $<$<COMPILE_LANGUAGE:CXX>:-O2 -g -std=c++17>)
 target_link_directories(main PRIVATE ${DEPS_PREFIX}/lib)

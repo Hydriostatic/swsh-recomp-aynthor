@@ -205,35 +205,47 @@ static bool find_lib(const char *dir, int depth, char *out, size_t n) {
     closedir(d);
     return found;
 }
-static bool build_code(void) {
-    if (gamelib_present(ROOT)) return true;
+// a lasgame.so brought with the game files (built on a PC or in CI): copied, no build here. 1 = done, 0 = none, -1 = failed
+static int prebuilt_code(void) {
+    if (gamelib_present(ROOT)) return 1;
     char lib[1100], id[1200];
     char import[1100];  // (or left in the app's import folder: the library is built apart from the game files)
     snprintf(import, sizeof import, "%s/import", plat_android_data_dir());
     if (!(g_folder[0] && find_lib(g_folder, 0, lib, sizeof lib)) && !find_lib(import, 0, lib, sizeof lib)) {
-        LOG("[setup] no " GAMELIB_NAME " with the game files: build it for this version of the app (docs/ANDROID-THOR.md)\n");
-        g_state = SETUP_FAIL_TOOLS;
-        return false;
+        return 0;
     }
     snprintf(id, sizeof id, "%s.id", lib);
     g_state = SETUP_FINISHING;
     g_phase0 = 0.15f, g_phase1 = 1.0f;
     if (!romfs_copy_file(lib, ROOT "/" GAMELIB_NAME, copy_progress) || !romfs_copy_file(id, ROOT "/" GAMELIB_NAME ".id", NULL)) {
         g_state = SETUP_FAIL_COPY;
-        return false;
+        return -1;
     }
-    if (!gamelib_present(ROOT)) {  // (its id is another version's)
-        LOG("[setup] %s was built for another version of the app\n", lib);
-        g_state = SETUP_FAIL_BUILD;
-        return false;
+    if (!gamelib_present(ROOT)) {  // (its id is another version's: built here instead)
+        LOG("[setup] %s was built for another version of the app: building it here\n", lib);
+        rt_remove_game_file(ROOT, GAMELIB_NAME);
+        rt_remove_game_file(ROOT, GAMELIB_NAME ".id");
+        return 0;
     }
-    return true;
+    return 1;
 }
-#else
+#endif
+// Builds the game code from the game files' exefs (runtime/gamebuild.c): the PC release's start screen, and on
+// Android the same with the python and zig the APK installs (tools/android/build_genkit.sh).
 static bool build_code(void) {
+#ifdef __ANDROID__
+    int pre = prebuilt_code();
+    if (pre) return pre > 0;
+#endif
     if (!gamebuild_available()) { g_state = SETUP_FAIL_TOOLS; return false; }
     int cores = SDL_GetNumLogicalCPUCores(), ram_gb = SDL_GetSystemRAM() / 1024;
     GameBuildOpts o = {build_progress, cores < ram_gb - 2 ? cores : ram_gb - 2 > 1 ? ram_gb - 2 : 1};
+#ifdef __ANDROID__
+    // (a handheld shares its RAM with the system, and Android ends an app that takes too much: about 2 GB per
+    //  compiler, with the generators' share and the system's kept free)
+    int fit = (ram_gb - 5) / 2;
+    if (o.jobs > fit) o.jobs = fit > 1 ? fit : 1;
+#endif
     char why[256] = "";
     g_state = SETUP_READING;
     if (!gamebuild_run(ROOT, &o, why, sizeof why)) {
@@ -243,7 +255,6 @@ static bool build_code(void) {
     }
     return true;
 }
-#endif
 
 static void *setup_thread(void *arg) {
     (void)arg;

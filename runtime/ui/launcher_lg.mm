@@ -173,8 +173,17 @@ static void game_files_section(SDL_Window *win) {
                                          "Recompilando o código do jogo...", "Finalizando..."};
         ImGui::TextUnformatted(st >= 1 && st <= 6 ? T(en[st], pt[st]) : "...");
         ImGui::ProgressBar(setup_progress(), ImVec2(-FLT_MIN, 0));
+#ifdef __ANDROID__
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s", T("This takes a long time on a handheld (one to two hours), only once. Keep the app open and "
+                                    "the device plugged in; the game can be played when it's done.",
+                                    "Isso demora bastante num portátil (uma a duas horas), só uma vez. Deixe o app aberto e o "
+                                    "aparelho na tomada; o jogo fica liberado quando terminar."));
+        ImGui::PopTextWrapPos();
+#else
         ImGui::TextDisabled("%s", T("This takes a while (about 40 minutes), only once. The game can be played when it's done.",
                                     "Isso demora (uns 40 minutos), só uma vez. O jogo fica liberado quando terminar."));
+#endif
         return;
     }
     bool ready = setup_ready();
@@ -200,13 +209,13 @@ static void game_files_section(SDL_Window *win) {
         int k = st - SETUP_FAIL_NOT_FOUND;
         ImGui::TextColored(k_red, "%s", T(en[k], pt[k]));
 #ifdef __ANDROID__
-        if (st == SETUP_FAIL_TOOLS || st == SETUP_FAIL_BUILD) {  // (no compiler here: the library comes with the files)
+        if (st == SETUP_FAIL_TOOLS || st == SETUP_FAIL_BUILD) {
             ImGui::PushTextWrapPos(0);
             ImGui::TextDisabled("%s", st == SETUP_FAIL_TOOLS
-                ? T("Put lasgame.so and lasgame.so.id (built for this version of the app) in the game folder too.",
-                    "Coloque também lasgame.so e lasgame.so.id (compilados para esta versão do app) na pasta do jogo.")
-                : T("That lasgame.so was built for another version of the app: build it again for this one.",
-                    "Esse lasgame.so foi compilado para outra versão do app: compile de novo para esta."));
+                ? T("The game code builder didn't unpack: close the app, open it again and wait a minute before trying.",
+                    "O compilador do código do jogo não foi descompactado: feche o app, abra de novo e espere um minuto antes de tentar.")
+                : T("Check there are about 4 GB free and try again; details in lasrecomp.log.",
+                    "Confira se há uns 4 GB livres e tente de novo; detalhes no lasrecomp.log."));
             ImGui::PopTextWrapPos();
         } else
 #endif
@@ -214,10 +223,10 @@ static void game_files_section(SDL_Window *win) {
     } else {
         ImGui::PushTextWrapPos(0);
 #ifdef __ANDROID__
-        ImGui::TextUnformatted(T("Select the folder with your own extracted Pokémon Sword or Shield 1.3.2 (exefs, romfs or "
-                                 "romfs.bin) and the game code built for this app (lasgame.so, lasgame.so.id).",
-                                 "Selecione a pasta com o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs, romfs ou romfs.bin) "
-                                 "e o código do jogo compilado para este app (lasgame.so, lasgame.so.id)."));
+        ImGui::TextUnformatted(T("Select the folder with your own extracted Pokémon Sword or Shield 1.3.2 (exefs and romfs, "
+                                 "or romfs.bin). The game code is then built here from it.",
+                                 "Selecione a pasta com o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs e romfs, ou "
+                                 "romfs.bin). O código do jogo é compilado aqui a partir dela."));
         ImGui::TextDisabled("%s", T("The app asks for access to all files once, to read that folder.",
                                     "O app pede acesso a todos os arquivos uma vez, para ler essa pasta."));
 #else
