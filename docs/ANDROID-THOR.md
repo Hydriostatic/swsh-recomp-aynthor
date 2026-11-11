@@ -33,12 +33,14 @@ fixing starts.
 
 ## Setting it up on the Thor
 
-1. Install the APK and open it once. That creates `Android/data/io.github.hydriostatic.swshrecomp/files/`.
-2. Copy into `.../files/import/`:
+1. Install the APK and open it.
+2. Put these anywhere on the Thor's storage or SD card, in one folder:
    - `exefs/` and `romfs/` (or `romfs.bin`) from your own extracted game, and
-   - `lasgame.so` and `lasgame.so.id`.
-3. On the start screen, press **Set up from the import folder**. It builds the RomFS image (or moves `romfs.bin`) and
-   copies the game code over. Plan for about 15 GB free.
+   - `lasgame.so` and `lasgame.so.id`. They can also go in `Android/data/io.github.hydriostatic.swshrecomp/files/import/`.
+3. On the start screen, press **Select game folder...**. The first time, Android asks for "All files access" for the
+   app: allow it and press Back, and the folder picker opens. Pick the folder.
+   The setup copies `exefs/` and builds the RomFS image (or copies `romfs.bin`) into the app's folder, so plan for
+   about 15 GB free. Your folder is left as it was.
 
 Logs: `.../files/lasrecomp.log` (and `lasrecomp-prev.log`); logcat tag `SwShRecomp`.
 Settings that would be environment variables on PC go one per line (`NAME=value`) in `.../files/larecomp.env`, for

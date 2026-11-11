@@ -83,6 +83,9 @@ bool plat_android_stage_lib(const char *src, char *out, size_t n);
 const char *plat_android_data_dir(void);       // the data root: Android/data/<package>/files on shared storage
 bool plat_android_in_background(void);         // the activity is paused: its window has no surface to draw into
 int plat_android_surface_generation(void);     // counts the returns to the foreground (each brings a new surface)
+// Opens the system folder picker (after asking for all-files access); the folder's path comes back, on another
+// thread, to launcher_android_folder_picked (runtime/ui/launcher_lg.mm).
+void plat_android_pick_folder(void);
 #endif
 
 // ---- diagnostics

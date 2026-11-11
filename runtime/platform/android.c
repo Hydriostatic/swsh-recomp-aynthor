@@ -363,6 +363,32 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
 
 #include "../panel.h"
 
+void launcher_android_folder_picked(const char *path);  // runtime/ui/launcher_lg.mm
+
+void plat_android_pick_folder(void) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act = (jobject)SDL_GetAndroidActivity();
+    if (!env || !act) { fprintf(stderr, "[android] no activity for the folder picker\n"); return; }
+    jclass cls = (*env)->GetObjectClass(env, act);
+    jmethodID m = cls ? (*env)->GetMethodID(env, cls, "pickGameFolder", "()V") : NULL;
+    if (m) (*env)->CallVoidMethod(env, act, m);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    if (cls) (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, act);
+}
+
+// MainActivity: the picked folder's path, or NULL when the picker was closed
+__attribute__((visibility("default"))) JNIEXPORT void JNICALL
+Java_io_github_hydriostatic_swshrecomp_MainActivity_nativeFolderPicked(JNIEnv *env, jclass cls, jstring path) {
+    (void)cls;
+    if (!path) return;
+    const char *p = (*env)->GetStringUTFChars(env, path, NULL);
+    if (!p) return;
+    fprintf(stderr, "[android] game folder: %s\n", p);
+    launcher_android_folder_picked(p);
+    (*env)->ReleaseStringUTFChars(env, path, p);
+}
+
 __attribute__((visibility("default"))) JNIEXPORT jstring JNICALL
 Java_io_github_hydriostatic_swshrecomp_DualScreen_nativeSnapshot(JNIEnv *env, jclass cls) {
     (void)cls;

@@ -208,7 +208,9 @@ static bool find_lib(const char *dir, int depth, char *out, size_t n) {
 static bool build_code(void) {
     if (gamelib_present(ROOT)) return true;
     char lib[1100], id[1200];
-    if (!g_folder[0] || !find_lib(g_folder, 0, lib, sizeof lib)) {
+    char import[1100];  // (or left in the app's import folder: the library is built apart from the game files)
+    snprintf(import, sizeof import, "%s/import", plat_android_data_dir());
+    if (!(g_folder[0] && find_lib(g_folder, 0, lib, sizeof lib)) && !find_lib(import, 0, lib, sizeof lib)) {
         LOG("[setup] no " GAMELIB_NAME " with the game files: build it for this version of the app (docs/ANDROID-THOR.md)\n");
         g_state = SETUP_FAIL_TOOLS;
         return false;
@@ -286,8 +288,12 @@ static void *setup_thread(void *arg) {
     if (ok && f.romfs_bin[0]) {
         g_phase0 = 0.01f, g_phase1 = 0.15f;
 #ifdef __ANDROID__
-        // (moved, not copied: shared storage has no hard links, and a handheld rarely has room for the image twice)
-        ok = rename(f.romfs_bin, ROOT "/romfs.bin") == 0 || romfs_copy_file(f.romfs_bin, ROOT "/romfs.bin", copy_progress);
+        // out of the app's own import folder it is moved, not copied (shared storage has no hard links, and a
+        // handheld rarely has room for the image twice); a folder the player picked keeps its files
+        char import[1100];
+        snprintf(import, sizeof import, "%s/import/", plat_android_data_dir());
+        bool move = !strncmp(f.romfs_bin, import, strlen(import));
+        ok = (move && rename(f.romfs_bin, ROOT "/romfs.bin") == 0) || romfs_copy_file(f.romfs_bin, ROOT "/romfs.bin", copy_progress);
 #else
         ok = romfs_copy_file(f.romfs_bin, ROOT "/romfs.bin", copy_progress);
 #endif

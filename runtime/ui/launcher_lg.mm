@@ -133,14 +133,14 @@ static void SDLCALL picked_game(void *, const char *const *files, int) {
     pthread_mutex_unlock(&g_pick_lock);
 }
 #ifdef __ANDROID__
-// No folder picker (and no path a picked folder could be read by): the game files are taken from import/ in the
-// app's folder on shared storage, or put straight into extracted/ (docs/ANDROID-THOR.md).
-static void pick_game_folder(SDL_Window *) {
-    char p[1100];
-    snprintf(p, sizeof p, "%s/import", plat_android_data_dir());
-    const char *const files[] = {p, NULL};
+// Android's folder picker hands out content:// links native code can't read: MainActivity.pickGameFolder asks for
+// all-files access first and turns the picked folder into its path on storage (runtime/platform/android.c calls it
+// and calls back here). Without the permission it answers with the import folder in the app's own storage.
+extern "C" void launcher_android_folder_picked(const char *path) {
+    const char *const files[] = {path, NULL};
     picked_game(NULL, files, 0);
 }
+static void pick_game_folder(SDL_Window *) { plat_android_pick_folder(); }
 #else
 static void pick_game_folder(SDL_Window *win) { SDL_ShowOpenFolderDialog(picked_game, NULL, win, NULL, false); }
 #endif
@@ -203,11 +203,10 @@ static void game_files_section(SDL_Window *win) {
         if (st == SETUP_FAIL_TOOLS || st == SETUP_FAIL_BUILD) {  // (no compiler here: the library comes with the files)
             ImGui::PushTextWrapPos(0);
             ImGui::TextDisabled("%s", st == SETUP_FAIL_TOOLS
-                ? T("Put lasgame.so and lasgame.so.id (built for this version of the app) in the import folder too.",
-                    "Coloque também lasgame.so e lasgame.so.id (compilados para esta versão do app) na pasta import.")
+                ? T("Put lasgame.so and lasgame.so.id (built for this version of the app) in the game folder too.",
+                    "Coloque também lasgame.so e lasgame.so.id (compilados para esta versão do app) na pasta do jogo.")
                 : T("That lasgame.so was built for another version of the app: build it again for this one.",
                     "Esse lasgame.so foi compilado para outra versão do app: compile de novo para esta."));
-            ImGui::TextDisabled("%s/import", plat_android_data_dir());
             ImGui::PopTextWrapPos();
         } else
 #endif
@@ -215,11 +214,12 @@ static void game_files_section(SDL_Window *win) {
     } else {
         ImGui::PushTextWrapPos(0);
 #ifdef __ANDROID__
-        ImGui::TextUnformatted(T("Copy your own extracted Pokémon Sword or Shield 1.3.2 (exefs, romfs or romfs.bin) and the game "
-                                 "code built for this app (lasgame.so, lasgame.so.id) into this folder, then press the button:",
-                                 "Copie o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs, romfs ou romfs.bin) e o código do "
-                                 "jogo compilado para este app (lasgame.so, lasgame.so.id) para esta pasta e aperte o botão:"));
-        ImGui::TextDisabled("%s/import", plat_android_data_dir());
+        ImGui::TextUnformatted(T("Select the folder with your own extracted Pokémon Sword or Shield 1.3.2 (exefs, romfs or "
+                                 "romfs.bin) and the game code built for this app (lasgame.so, lasgame.so.id).",
+                                 "Selecione a pasta com o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs, romfs ou romfs.bin) "
+                                 "e o código do jogo compilado para este app (lasgame.so, lasgame.so.id)."));
+        ImGui::TextDisabled("%s", T("The app asks for access to all files once, to read that folder.",
+                                    "O app pede acesso a todos os arquivos uma vez, para ler essa pasta."));
 #else
         ImGui::TextUnformatted(T("Select the folder with your own extracted Pokémon Sword or Shield, 1.3.2 (exefs and romfs).",
                                  "Selecione a pasta com o seu Pokémon Sword ou Shield 1.3.2 extraído (exefs e romfs)."));
@@ -227,10 +227,7 @@ static void game_files_section(SDL_Window *win) {
         ImGui::PopTextWrapPos();
     }
 #ifdef __ANDROID__
-    if (ui_button(T("Set up from the import folder", "Preparar a partir da pasta import"), -1))
-#else
     if (ui_button(T("Select game folder...", "Selecionar pasta do jogo..."), -1))
-#endif
         pick_game_folder(win);
 }
 
