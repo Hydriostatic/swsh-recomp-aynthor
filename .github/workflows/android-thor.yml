@@ -30,16 +30,16 @@ jobs:
         if: steps.deps.outputs.cache-hit != 'true'
         run: tools/android/build_deps.sh build/android-deps build/android-deps-work
       - name: SDL3
-        run: git clone -q --depth 1 -b "$SDL_TAG" https://github.com/libsdl-org/SDL build/SDL
+        run: git clone -q --depth 1 -b "$SDL_TAG" https://github.com/libsdl-org/SDL "$RUNNER_TEMP/SDL"  # (outside the workspace: its gradle wrapper)
       - name: Prepare
-        run: tools/android/prepare.sh build/SDL
+        run: tools/android/prepare.sh "$RUNNER_TEMP/SDL"
       - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: "8.11.1" }
+        with: { gradle-version: "8.11.1", validate-wrappers: false }
       - name: Build
         working-directory: android
         env:
           DEPS_PREFIX: ${{ github.workspace }}/build/android-deps
-          SDL_SRC: ${{ github.workspace }}/build/SDL
+          SDL_SRC: ${{ runner.temp }}/SDL
         run: gradle --no-daemon assembleRelease
       - name: Collect
         run: |
