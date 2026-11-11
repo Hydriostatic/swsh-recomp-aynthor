@@ -5,6 +5,10 @@ set -euo pipefail
 SDL=${1:?SDL3 source dir}
 python3 tools/android/rebase_guest.py . build/android-src
 cp -R third_party build/android-src/
+# SMAA's shader as a C string for runtime/nvn/smaa_data.c (the Makefile's rule)
+mkdir -p build/android-src/inc
+LC_ALL=C tr -d '\r' < third_party/smaa/SMAA.hlsl | LC_ALL=C tr '\200-\377' '?' | \
+    sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$/\\n"/' > build/android-src/inc/smaa_hlsl.inc
 . tools/android/env.sh build/android-src
 echo "$GAMELIB_ID_ANDROID" > build/android-src/GAMELIB_ID
 mkdir -p android/app/src/main/java/org/libsdl

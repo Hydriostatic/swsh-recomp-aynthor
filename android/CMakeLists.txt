@@ -18,13 +18,6 @@ set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 add_subdirectory(${SDL_SRC} sdl EXCLUDE_FROM_ALL)
 
-# SMAA's shader as a C string (as the Makefile does)
-set(SMAA_INC ${CMAKE_BINARY_DIR}/inc/smaa_hlsl.inc)
-add_custom_command(OUTPUT ${SMAA_INC}
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/inc
-  COMMAND sh -c "LC_ALL=C tr -d '\\r' < ${S}/third_party/smaa/SMAA.hlsl | LC_ALL=C tr '\\200-\\377' '?' | sed -e 's/\\\\/\\\\\\\\/g' -e 's/\"/\\\\\"/g' -e 's/^/\"/' -e 's/$/\\\\n\"/' > ${SMAA_INC}"
-  DEPENDS ${S}/third_party/smaa/SMAA.hlsl)
-
 file(GLOB RT_C ${S}/runtime/*.c ${S}/runtime/hle/*.c ${S}/runtime/services/*.c ${S}/runtime/nvn/*.c
      ${S}/runtime/nvn/maxwell/*.c ${S}/runtime/nvn/vulkan/*.c)
 file(GLOB RT_CXX ${S}/runtime/nvn/vulkan/*.cpp)
@@ -34,8 +27,8 @@ set(IMGUI_SRC ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.c
     ${IMGUI}/backends/imgui_impl_sdl3.cpp ${IMGUI}/backends/imgui_impl_vulkan.cpp)
 set_source_files_properties(${UI_MM} PROPERTIES LANGUAGE CXX COMPILE_OPTIONS "-xc++")
 
-add_library(main SHARED ${RT_C} ${RT_CXX} ${UI_MM} ${IMGUI_SRC} ${S}/runtime/platform/android.c ${SMAA_INC})
-target_include_directories(main PRIVATE ${S}/runtime ${S}/runtime/nvn ${CMAKE_BINARY_DIR}/inc ${S}/third_party/smaa/Textures
+add_library(main SHARED ${RT_C} ${RT_CXX} ${UI_MM} ${IMGUI_SRC} ${S}/runtime/platform/android.c)
+target_include_directories(main PRIVATE ${S}/runtime ${S}/runtime/nvn ${S}/inc ${S}/third_party/smaa/Textures
                            ${IMGUI} ${IMGUI}/backends ${DEPS_PREFIX}/include)
 target_compile_definitions(main PRIVATE GAMELIB_ID="${GAMELIB_ID}" GAMELIB_CFLAGS="" GAMELIB_SHARED="-shared")
 target_compile_options(main PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2 -g -fno-strict-aliasing -Wall -Wno-unused-function -Wno-format>
