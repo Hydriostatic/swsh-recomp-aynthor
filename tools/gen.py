@@ -482,6 +482,14 @@ if _os.path.exists(_rv):
         RANDO_CODE[int(_a, 16)] = [int(_w, 16) for _w in _ws]
 
 
+def cut_after(off):
+    """Where a file of C may end: after the function at module offset off, for 1 in 16 functions, chosen by the
+    function itself (its address) rather than by how much C came before it. A change to one function then moves the
+    file boundaries around it only, not every one after it, so a rebuild recompiles only those files (the Android
+    app's object cache, runtime/gamebuild.c)."""
+    return ((((off >> 2) * 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF) >> 60) == 0
+
+
 def write_if_changed(path, text):
     """Leaves unchanged chunks untouched so make only recompiles what a patch affected."""
     try:
@@ -591,7 +599,7 @@ def main():
     pending = None  # (address, lines, refs) of a big function that starts the next file
     while ci < len(order) or pending:
         body, refs, size, fns = [], set(), 0, []
-        while (pending or ci < len(order)) and len(fns) < args.chunk and size < args.chunk_bytes:
+        while (pending or ci < len(order)) and len(fns) < args.chunk and size < 2 * args.chunk_bytes:
             if pending:
                 a, lines, r = pending
                 pending = None
@@ -611,6 +619,8 @@ def main():
             fns.append(a)
             refs |= r
             if n > args.big_fn:
+                break
+            if size >= args.chunk_bytes * 2 // 3 and cut_after(a - args.base):
                 break
         path = os.path.join(args.outdir, f'{args.name}_{nchunks:03d}.c')
         text = ['#include "cpu.h"\n' + ('#include "simd.h"\n' if m.lifter.sc else '')]

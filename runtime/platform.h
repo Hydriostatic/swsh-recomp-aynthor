@@ -94,6 +94,7 @@ bool plat_android_set_data_dir(const char *dir);  // the game files folder, from
 // The start screen's buttons: the folder picker for kind 0 (game) / 1 (log and saves), the update check / install
 void plat_android_pick_folder_kind(int kind);
 void plat_android_update(bool install);
+void plat_android_build_status(int percent);  // the game code build's notification: 0..100, -1 = ended
 #endif
 
 // ---- diagnostics

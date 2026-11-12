@@ -23,7 +23,7 @@ import time
 _here = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [_here, os.path.join(_here, '..')]  # (gen.py next to this one on the device, tools/ in the repo)
 import gen  # noqa: E402
-from gen import Module, fname, hx, sanitize, sext26, write_if_changed  # noqa: E402
+from gen import Module, cut_after, fname, hx, sanitize, sext26, write_if_changed  # noqa: E402
 
 M = None    # the module, set before the workers fork (they inherit it, its lift cache still empty)
 HLE = None  # address -> host function name (sdk)
@@ -222,7 +222,7 @@ def main():
         sc = m.lifter.sc  # (simd.h in every file, as gen.py: decided by the mode, not by what was lifted)
         while ci < len(order) or pending:
             body, refs, size, fns = [], set(), 0, []
-            while (pending or ci < len(order)) and len(fns) < args.chunk and size < args.chunk_bytes:
+            while (pending or ci < len(order)) and len(fns) < args.chunk and size < 2 * args.chunk_bytes:
                 if pending:
                     a, lines, r = pending
                     pending = None
@@ -238,6 +238,8 @@ def main():
                 fns.append(a)
                 refs |= r
                 if n > args.big_fn:
+                    break
+                if size >= args.chunk_bytes * 2 // 3 and cut_after(a - args.base):
                     break
             path = os.path.join(args.outdir, f'{args.name}_{nchunks:03d}.c')
             text = ['#include "cpu.h"\n' + ('#include "simd.h"\n' if sc else '')]

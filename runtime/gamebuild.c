@@ -3,10 +3,16 @@
 
 #include <pthread.h>
 #include <stdint.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef __ANDROID__
+#include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "gamelib.h"
 #include "paths.h"
@@ -243,6 +249,8 @@ static void log_tail(const char *path, char *out, size_t n) {  // the last line 
 typedef struct {
     char src[1100], obj[1100], log[1100];
     unsigned long long bytes;
+    int tries;          // (Android: 1 = compiled again with zig cc after the direct clang failed)
+    char key[40];       // (Android: its object cache entry, "" = not cached)
 } Unit;
 
 typedef struct {
@@ -261,6 +269,8 @@ static void add_unit(Units *us, const char *src, const char *work, const char *s
     snprintf(u->log, sizeof u->log, "%s" SEP "%s.log", work, stem);
     struct stat st;
     u->bytes = stat(src, &st) == 0 ? (unsigned long long)st.st_size : 0;
+    u->tries = 0;
+    u->key[0] = 0;
 }
 
 // The flags the game code was built with (GAMELIB_CFLAGS, part of its id). zig cc reads -march=<cpu> with its own CPU
@@ -280,8 +290,64 @@ static void add_cflags(Args *a, const Tools *t) {
     }
 }
 
+#ifdef __ANDROID__
+// The clang inside zig, called directly ("zig clang"): no zig cc in between, which hashes every source and header
+// into its cache and runs clang as one more process per file. The include folders and target are what zig cc
+// passes (res/zig/clang_flags.txt, tools/android/build_genkit.sh, checked there); a file this fails on is compiled
+// again with zig cc (start_compile, tries 1).
+static void add_direct_clang(Args *a, const Tools *t) {
+    add(a, t->cc);
+    add(a, "clang");
+    char path[1100], line[1200];
+    snprintf(path, sizeof path, "%s/res/zig/clang_flags.txt", plat_android_private_dir());
+    FILE *f = fopen(path, "rb");
+    while (f && fgets(line, sizeof line, f)) {  // (one flag a line; "@ZIG@" = the zig lib folder)
+        line[strcspn(line, "\r\n")] = 0;
+        if (!line[0]) continue;
+        char *at = strstr(line, "@ZIG@"), buf[1400];
+        if (at) {
+            *at = 0;
+            snprintf(buf, sizeof buf, "%s%s/res/zig/lib%s", line, plat_android_private_dir(), at + 5);
+            add(a, buf);
+        } else {
+            add(a, line);
+        }
+    }
+    if (f) fclose(f);
+    char flags[1024];
+    snprintf(flags, sizeof flags, "%s", GAMELIB_CFLAGS);
+    bool skip = false;
+    for (char *x = strtok(flags, " "); x; x = strtok(NULL, " ")) {  // (zig's own target spelling: given above)
+        if (skip) { skip = false; continue; }
+        if (!strcmp(x, "-target")) { skip = true; continue; }
+        add(a, x);
+    }
+}
+static bool direct_clang_ok(void) {
+    char path[1100];
+    snprintf(path, sizeof path, "%s/res/zig/clang_flags.txt", plat_android_private_dir());
+    return file_exists(path) && !getenv("LARECOMP_ZIG_CC");
+}
+#endif
+
 static PlatProc start_compile(const Tools *t, const Unit *u) {
     Args a = {0};
+#ifdef __ANDROID__
+    if (u->tries == 0 && direct_clang_ok()) {
+        add_direct_clang(&a, t);
+        char inc[1200];
+        snprintf(inc, sizeof inc, "-I%s", t->inc);
+        add(&a, inc);
+        add(&a, "-DGAMELIB_ID=\"" GAMELIB_ID "\"");
+        add(&a, "-c");
+        add(&a, u->src);
+        add(&a, "-o");
+        add(&a, u->obj);
+        PlatProc p = spawn(a.v, u->log);
+        args_free(&a);
+        return p;
+    }
+#endif
     compiler(&a, t);
     add_cflags(&a, t);
 #ifdef __ANDROID__
@@ -302,6 +368,98 @@ static PlatProc start_compile(const Tools *t, const Unit *u) {
     args_free(&a);
     return p;
 }
+
+#ifdef __ANDROID__
+// ------------------------------------------------------------------ object cache (Android)
+// Every compiled file kept in the app's private storage under a key of its C, the game code id (generator,
+// headers, flags) and the builder's version: a build that stopped half way (the app closed, the battery) resumes
+// with what it had compiled, and a rebuild after an update compiles only the files whose C changed (tools/gen.py
+// cuts the files where the code itself says, so a change stays in its own files). Only the last build's objects are
+// kept.
+static void cache_dir(char *out, size_t n) { snprintf(out, n, "%s/objcache", plat_android_private_dir()); }
+
+static bool unit_key(const Unit *u, char out[40]) {
+    FILE *f = fopen(u->src, "rb");
+    if (!f) return false;
+    static char salt[200];
+    if (!salt[0]) {
+        char v[1100], ver[128] = "";
+        snprintf(v, sizeof v, "%s/res/genkit.ok", plat_android_private_dir());
+        FILE *g = fopen(v, "rb");
+        if (g) { size_t k = fread(ver, 1, sizeof ver - 1, g); ver[k] = 0; fclose(g); }
+        snprintf(salt, sizeof salt, "%s|%s|%s", GAMELIB_ID, GAMELIB_CFLAGS, ver);
+    }
+    uint64_t h1 = 0xcbf29ce484222325ull, h2 = 0x84222325cbf29ce4ull;  // (FNV-1a, and a second pass mixed differently)
+    for (const char *s = salt; *s; s++) { h1 = (h1 ^ (uint8_t)*s) * 0x100000001b3ull; h2 = (h2 + (uint8_t)*s) * 0x9e3779b97f4a7c15ull; }
+    static unsigned char buf[1 << 16];
+    unsigned long long len = 0;
+    for (size_t k; (k = fread(buf, 1, sizeof buf, f)) > 0;) {
+        for (size_t i = 0; i < k; i++) {
+            h1 = (h1 ^ buf[i]) * 0x100000001b3ull;
+            h2 = (h2 ^ (buf[i] + (h2 >> 29))) * 0xff51afd7ed558ccdull;
+        }
+        len += k;
+    }
+    fclose(f);
+    snprintf(out, 40, "%016llx%016llx", (unsigned long long)h1, (unsigned long long)(h2 ^ len));
+    return true;
+}
+
+static bool cache_take(Unit *u) {  // the object of the same C: hard-linked into place (the same storage)
+    if (!unit_key(u, u->key)) { u->key[0] = 0; return false; }
+    char dir[1100], p[1200];
+    cache_dir(dir, sizeof dir);
+    snprintf(p, sizeof p, "%s/%s.o", dir, u->key);
+    struct stat st;
+    if (stat(p, &st) != 0) return false;
+    remove(u->obj);
+    if (link(p, u->obj) != 0) return false;
+    utimensat(AT_FDCWD, p, NULL, 0);  // (used by this build: kept)
+    return true;
+}
+
+static void cache_put(const Unit *u) {
+    if (!u->key[0]) return;
+    char dir[1100], p[1200];
+    cache_dir(dir, sizeof dir);
+    mkdir(dir, 0755);
+    snprintf(p, sizeof p, "%s/%s.o", dir, u->key);
+    remove(p);
+    link(u->obj, p);
+}
+
+static void cache_prune(uint64_t since_ns) {  // (after a complete build: what it didn't use goes)
+    char dir[1100];
+    cache_dir(dir, sizeof dir);
+    DIR *d = opendir(dir);
+    if (!d) return;
+    int n = 0;
+    for (struct dirent *e; (e = readdir(d));) {
+        if (e->d_name[0] == '.') continue;
+        char p[1400];
+        snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
+        struct stat st;
+        if (stat(p, &st) == 0 && (uint64_t)st.st_mtim.tv_sec * 1000000000ull + (uint64_t)st.st_mtim.tv_nsec < since_ns) {
+            remove(p);
+            n++;
+        }
+    }
+    closedir(d);
+    if (n) LOG("[gamebuild] object cache: %d old objects removed\n", n);
+}
+
+// Free memory, MB (MemAvailable): another compiler starts only while there is room for it - a handheld shares its
+// RAM with the system, and Android ends an app that takes too much
+static long mem_available_mb(void) {
+    FILE *f = fopen("/proc/meminfo", "r");
+    long kb = -1;
+    char line[128];
+    while (f && fgets(line, sizeof line, f))
+        if (sscanf(line, "MemAvailable: %ld kB", &kb) == 1) break;
+    if (f) fclose(f);
+    return kb < 0 ? 1 << 20 : kb / 1024;
+}
+#endif
 
 // ------------------------------------------------------------------ the build
 bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size_t why_size) {
@@ -370,10 +528,10 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         add(&a, g->out);
         if (i == 1) { add(&a, "--hle"); add(&a, t.hle); }
 #ifdef __ANDROID__
-        {   // tools/android/genpar.py: main is most of the work (half the cores), sdk next, the two small ones alone
+        {   // tools/android/genpar.py: main is most of the work (every core), sdk half, the two small ones two each
             char jobs[16];
             int cores = SDL_GetNumLogicalCPUCores();
-            snprintf(jobs, sizeof jobs, "%d", i == 0 ? (cores / 2 > 1 ? cores / 2 : 1) : i == 1 ? (cores / 4 > 1 ? cores / 4 : 1) : 1);
+            snprintf(jobs, sizeof jobs, "%d", i == 0 ? cores : i == 1 ? (cores / 2 > 1 ? cores / 2 : 1) : 2);
             add(&a, "--jobs");
             add(&a, jobs);
         }
@@ -384,6 +542,13 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     }
 
     Units units = {0};
+    int cache_hits = 0;
+#ifdef __ANDROID__
+    struct timespec rts;
+    clock_gettime(CLOCK_REALTIME, &rts);
+    uint64_t t_real0 = (uint64_t)rts.tv_sec * 1000000000ull + (uint64_t)rts.tv_nsec - 5000000000ull;  // (file times)
+#endif
+    (void)cache_hits;
     int queued[NGEN] = {0};  // chunk files of each module put in units so far
     bool tables[NGEN] = {false};
     int next = 0, jobs = o->jobs < 1 ? 1 : o->jobs > 64 ? 64 : o->jobs;
@@ -437,6 +602,17 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
 
         // compiles
         while (nrun < jobs && next < units.n) {
+#ifdef __ANDROID__
+            if (cache_take(&units.u[next])) {  // (compiled before: the same C)
+                done_bytes += units.u[next].bytes;
+                cache_hits++;
+                if (next > 0) remove(units.u[next].src);
+                next++;
+                continue;
+            }
+            // room for one more compiler (about 1.5 GB at worst), else wait for one to finish
+            if (nrun > 0 && mem_available_mb() < 2200) break;
+#endif
             PlatProc p = start_compile(&t, &units.u[next]);
             if (!p) { snprintf(why, why_size, "the compiler didn't start"); ok = false; break; }
             run[nrun].p = p, run[nrun].unit = next++;
@@ -446,6 +622,17 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
             int r = finished(run[k].p);
             if (r < 0) continue;
             Unit *u = &units.u[run[k].unit];
+#ifdef __ANDROID__
+            if (r != 0 && u->tries == 0 && direct_clang_ok()) {  // (the direct clang failed: once more with zig cc)
+                char last[300];
+                log_tail(u->log, last, sizeof last);
+                LOG("[gamebuild] %s: direct clang failed (%s), with zig cc\n", u->src, last);
+                u->tries = 1;
+                PlatProc p = start_compile(&t, u);
+                if (p) { run[k].p = p; continue; }
+            }
+            if (r == 0) cache_put(u);
+#endif
             if (r != 0) {
                 char last[300];
                 log_tail(u->log, last, sizeof last);
@@ -548,6 +735,12 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
             ok = false;
         }
     }
+#ifdef __ANDROID__
+    if (ok) {
+        LOG("[gamebuild] %d files, %d from the object cache\n", units.n, cache_hits);
+        cache_prune(t_real0);
+    }
+#endif
     if (ok) {
         remove(lib);
         char idp[1100];

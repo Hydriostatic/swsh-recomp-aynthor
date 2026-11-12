@@ -628,6 +628,7 @@ static void call_activity(const char *name, const char *sig, int iarg) {
 void plat_android_pick_folder_kind(int kind) { call_activity("pickFolder", "(I)V", kind); }
 void plat_android_pick_folder(void) { plat_android_pick_folder_kind(0); }
 void plat_android_update(bool install) { call_activity("updateApp", "(Z)V", install ? 1 : 0); }
+void plat_android_build_status(int percent) { call_activity("buildStatus", "(I)V", percent); }
 
 // MainActivity: the picked folder's path
 __attribute__((visibility("default"))) JNIEXPORT void JNICALL

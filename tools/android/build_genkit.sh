@@ -95,6 +95,19 @@ echo "zig check: ok"
 # zig cc's -O1 is clang's -O2 (ReleaseFast): runtime/gamebuild.c adds -Xclang -O1 - the last -O must be that one
 lastO=$(cd "$S" && $Z cc $GENFLAGS_ANDROID -Xclang -O1 -I"$KIT/gamelib-src" -c "$P/probe.c" -o "$P/probe3.o" -v 2>&1 | grep -- '-cc1' | tr ' ' '\n' | grep -E '^"?-O[0-9sz]"?$' | tail -1)
 echo "zig cc: last optimization flag to clang: ${lastO:-?}"
+# the direct clang the device compiles with ("zig clang", runtime/gamebuild.c add_direct_clang): zig cc's target and
+# include folders, in its order; @ZIG@ = the zig lib folder on the device. Checked: the probe compiles with them alone.
+CF=$KIT/zig/clang_flags.txt
+printf -- '-target\naarch64-unknown-linux-musl\n-nostdinc\n-fno-stack-protector\n' > "$CF"
+for d in include libc/include/aarch64-linux-musl libc/include/generic-musl libc/include/aarch64-linux-any libc/include/any-linux-any; do
+    [ -d "$KIT/zig/lib/$d" ] && printf -- '-isystem\n@ZIG@/%s\n' "$d" >> "$CF"
+done
+cat "$CF"
+mapfile -t CFL < <(sed "s#@ZIG@#$KIT/zig/lib#" "$CF")
+(cd "$S" && $Z clang "${CFL[@]}" ${GAMELIB_CFLAGS_ANDROID/-target aarch64-linux-musl /} -I"$KIT/gamelib-src" -c "$P/probe.c" -o "$P/probe4.o" &&
+            $Z clang "${CFL[@]}" ${GAMELIB_CFLAGS_ANDROID/-target aarch64-linux-musl /} -I"$KIT/gamelib-src" '-DGAMELIB_ID="0"' -c tools/gamelib_entry.c -o "$P/entry4.o")
+$Z ld.lld -shared -z max-page-size=16384 -o "$P/check4.so" "$P/probe4.o" "$P/entry4.o" "$KIT/zig/rt/libcompiler_rt.a"
+echo "direct clang check: ok"
 
 echo "$GAMELIB_ID_ANDROID $(date -u +%Y%m%d%H%M%S)" > "$KIT/VERSION"
 rm -f "$R/android/app/src/main/assets/genkit.zip"

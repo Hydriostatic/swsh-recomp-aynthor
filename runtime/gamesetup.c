@@ -181,6 +181,9 @@ static void copy_progress(uint64_t done, uint64_t total) {
 }
 static void build_progress(double f, const char *step) {
     g_progress = 0.15f + 0.85f * (float)f;
+#ifdef __ANDROID__
+    plat_android_build_status((int)(f * 100));  // (the foreground service's notification: MainActivity)
+#endif
     g_state = !strncmp(step, "Reading", 7) ? SETUP_READING : !strncmp(step, "Finishing", 9) ? SETUP_FINISHING
                                                                                            : SETUP_COMPILING;
 }
@@ -241,14 +244,20 @@ static bool build_code(void) {
     int cores = SDL_GetNumLogicalCPUCores(), ram_gb = SDL_GetSystemRAM() / 1024;
     GameBuildOpts o = {build_progress, cores < ram_gb - 2 ? cores : ram_gb - 2 > 1 ? ram_gb - 2 : 1};
 #ifdef __ANDROID__
-    // (a handheld shares its RAM with the system, and Android ends an app that takes too much: about 1.5 GB per
-    //  compiler, with the generators' and the system's share kept free - 5 at once on a 12 GB AYN Thor)
-    int fit = (ram_gb - 3) * 2 / 3;
-    if (o.jobs > fit) o.jobs = fit > 1 ? fit : 1;
+    // every core: gamebuild.c starts another compiler only while the free memory allows it (a handheld shares its RAM
+    // with the system, and Android ends an app that takes too much)
+    o.jobs = cores > 1 ? cores : 1;
 #endif
     char why[256] = "";
     g_state = SETUP_READING;
+#ifdef __ANDROID__
+    plat_android_build_status(0);
+    bool built = gamebuild_run(ROOT, &o, why, sizeof why);
+    plat_android_build_status(-1);
+    if (!built) {
+#else
     if (!gamebuild_run(ROOT, &o, why, sizeof why)) {
+#endif
         LOG("[setup] game code: %s\n", why);
         g_state = SETUP_FAIL_BUILD;
         return false;
@@ -272,6 +281,19 @@ static bool same_file(const char *a, const char *dir, const char *name) {
     if (fb) fclose(fb);
     return same;
 }
+
+#ifdef __ANDROID__
+typedef struct { char src[1024]; bool ok; } RomfsJob;
+static void *romfs_job(void *arg) {
+    RomfsJob *j = arg;
+    char why[256] = "";
+    uint64_t t0 = SDL_GetTicksNS();
+    j->ok = romfs_build(j->src, ROOT "/romfs.bin", NULL, why, sizeof why);
+    if (!j->ok) LOG("[setup] romfs image: %s\n", why);
+    else LOG("[setup] romfs image built in %llus (alongside the game code)\n", (unsigned long long)((SDL_GetTicksNS() - t0) / 1000000000ull));
+    return NULL;
+}
+#endif
 
 static void *setup_thread(void *arg) {
     (void)arg;
@@ -338,6 +360,25 @@ static void *setup_thread(void *arg) {
         }
     } else
         ok = romfs_copy_tree(f.exefs, ROOT "/exefs", copy_progress);
+#ifdef __ANDROID__
+    // the game code needs only exefs: it is built while the RomFS image is made (an I/O job of several minutes, the
+    // build a CPU one), not after it
+    if (ok && !f.romfs_bin[0]) {
+        static RomfsJob job;
+        snprintf(job.src, sizeof job.src, "%s", f.romfs);
+        job.ok = false;
+        pthread_t th;
+        bool threaded = pthread_create(&th, NULL, romfs_job, &job) == 0;
+        if (!threaded) romfs_job(&job);
+        bool code = build_code();
+        if (threaded) pthread_join(th, NULL);
+        if (!job.ok) g_state = SETUP_FAIL_COPY;
+        else if (code) g_state = setup_ready() ? SETUP_DONE : SETUP_FAIL_BUILD;
+        LOG("[setup] %s\n", g_state == SETUP_DONE ? "ready" : "failed");
+        g_running = false;
+        return NULL;
+    }
+#endif
     if (ok && f.romfs_bin[0]) {
         g_phase0 = 0.01f, g_phase1 = 0.15f;
 #ifdef __ANDROID__

@@ -183,6 +183,23 @@ public class MainActivity extends SDLActivity {
         return new File(path).isDirectory() ? path : null;
     }
 
+    // ---- the game code build's foreground service (runtime/platform/android.c plat_android_build_status): the
+    // percentage while it runs, -1 when it ended
+    private int lastBuildPct = -2;
+    public void buildStatus(int pct) {
+        if (pct == lastBuildPct) return;
+        lastBuildPct = pct;
+        Intent i = new Intent(this, BuildService.class);
+        if (pct < 0) { stopService(i); return; }
+        if (pct == 0 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            runOnUiThread(() -> requestPermissions(new String[] {android.Manifest.permission.POST_NOTIFICATIONS}, 7));
+        try {
+            startForegroundService(i.putExtra(BuildService.EXTRA_PERCENT, pct));
+        } catch (Exception e) {
+            Log.e(TAG, "build service: " + e);
+        }
+    }
+
     // ---- updates: each build of the thor branch is published as the "thor-latest" release (.github/workflows/
     // android-thor.yml) with build.txt (its number) and the APK. Installed over this copy - the same signing key - so
     // the game files and the built game code stay; only a build whose game code id changed asks for a rebuild.
