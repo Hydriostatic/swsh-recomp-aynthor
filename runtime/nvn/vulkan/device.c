@@ -970,6 +970,9 @@ void ui_window_init(void) {
     rt_window_icon(window);
     // the Fullscreen setting applies from the start screen on (not only once the game runs); test windows stay windows
     if (g_settings.fullscreen && !getenv("LARECOMP_WINDOW") && !getenv("LARECOMP_HIDDEN")) SDL_SetWindowFullscreen(window, true);
+#ifdef __ANDROID__
+    SDL_SetWindowFullscreen(window, true);  // (a handheld: the whole screen, no system bars - 1920x1080, not 1920x1025)
+#endif
     create_instance();
     if (!SDL_Vulkan_CreateSurface(window, g_vk.inst, NULL, &g_vk.surface)) FATAL("SDL_Vulkan_CreateSurface: %s\n", SDL_GetError());
     pick_device();
