@@ -43,4 +43,4 @@ target_link_options(main PRIVATE -Wl,--export-dynamic -Wl,-z,max-page-size=16384
 # (nostart-stop-gc: the registration sections - hle_impls, resets, services - are found by their __start_ / __stop_
 #  symbols and referenced by nothing else, so the NDK's --gc-sections would drop them; -Bsymbolic: FFmpeg's AArch64 assembly addresses its tables directly, as FFmpeg says for static libraries in a shared one)
 target_link_libraries(main PRIVATE SDL3::SDL3-shared avformat avcodec avutil swscale swresample shaderc_combined zstd z
-                      vulkan android log m dl)
+                      vulkan android nativewindow log m dl)

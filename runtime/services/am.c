@@ -162,6 +162,11 @@ static void application_functions(Service *s, IpcReq *req, IpcResp *resp) {
         resp_size(resp, 0x10);
         break;
     }
+    case 22: {  // SetTerminateResult: the game is about to stop itself - its reason, for the log
+        uint32_t r = IN(uint32_t, 0);
+        LOG("[am] SetTerminateResult %#x (%04u-%04u)\n", r, 2000 + (r & 0x1FF), (r >> 9) & 0x1FFF);
+        break;
+    }
     case 40: OUT(uint8_t, 0) = 0; resp_size(resp, 1); break;  // NotifyRunning
     case 130: case 140: resp->copy_handles[resp->ncopy++] = new_event(); break;
     default: UNHANDLED("IApplicationFunctions");

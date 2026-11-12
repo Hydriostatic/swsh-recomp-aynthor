@@ -27,6 +27,9 @@ uint64_t maxwell_gmem_base, maxwell_gmem_size;
 // memory addresses below are written with 32-bit halves instead - a shader using a 64-bit type fails to build there,
 // and its draws go missing. Set by the Vulkan backend from the device's features.
 bool maxwell_no_int64;
+// Global memory through a buffer device address instead of a storage buffer (Android: the heap shared as a hardware
+// buffer is larger than a storage buffer may be): the binding holds the address, accesses check it is set.
+bool maxwell_gmem_bda;
 const uint8_t *maxwell_dbg_code;
 uint32_t maxwell_dbg_pc;
 int maxwell_dbg_reg;
@@ -81,6 +84,7 @@ typedef struct {
     // GLSL (fields kept last: the MSL path's layout, including its out-of-range reg_used writes, is unchanged)
     bool glsl;               // emit Vulkan GLSL: dialect-specific constructs here, the rest via glsl_rewrite()
     bool uses_gmem_store;    // STG present: the gmem buffer is not readonly
+    bool bda;                // maxwell_gmem_bda when the translation started
     uint32_t cbuf_need[18];  // highest constant vec4 index + 1 per cbuf (array size of the GLSL block)
 } Ctx;
 
@@ -1512,25 +1516,26 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         c->info->uses_gmem = true;
         char addr[256];
         bool g32 = c->glsl && maxwell_no_int64 && maxwell_gmem_size <= 0xFFFFFFFFull;
+        const char *bda_ok = c->bda ? " && gmem_addr_.a != uvec2(0u)" : "";  // (no address: no access)
         if (g32) {
             // (32-bit halves: address hi:lo + the offset, minus the base, borrow and carry by hand; ga is the 32-bit
             //  offset into the heap, which is under 4 GB, and ok compares both halves)
             uint64_t o64 = (uint64_t)off, base = maxwell_gmem_base, size = maxwell_gmem_size;
             if (a == RZ) {
                 uint64_t ga = o64 - base;
-                sp(&c->body, "    { uint ga = 0x%08xu; bool ok = %s;\n", (uint32_t)ga, ga < size ? "true" : "false");
+                sp(&c->body, "    { uint ga = 0x%08xu; bool ok = %s%s;\n", (uint32_t)ga, ga < size ? "true" : "false", bda_ok);
             } else {
                 sp(&c->body, "    { uint b0 = 0u, b1 = 0u; uint alo = uaddCarry(%s, 0x%08xu, b0); uint ahi = %s + 0x%08xu + b0;\n"
-                             "      uint ga = usubBorrow(alo, 0x%08xu, b1); uint ghi = ahi - 0x%08xu - b1; bool ok = ghi == 0u && ga < 0x%08xu;\n",
+                             "      uint ga = usubBorrow(alo, 0x%08xu, b1); uint ghi = ahi - 0x%08xu - b1; bool ok = ghi == 0u && ga < 0x%08xu%s;\n",
                    R(a), (uint32_t)o64, wide ? R(a + 1) : "0u", (uint32_t)(o64 >> 32), (uint32_t)base, (uint32_t)(base >> 32),
-                   (uint32_t)size);
+                   (uint32_t)size, bda_ok);
             }
         } else {
         if (a == RZ) sprintf(addr, "ulong(%lld)", (long long)off);
         else if (wide) sprintf(addr, "((ulong(%s) << 32 | ulong(%s)) + ulong(%lld))", R(a + 1), R(a), (long long)off);
         else sprintf(addr, "(ulong(%s) + ulong(%lld))", R(a), (long long)off);
-        sp(&c->body, "    { ulong ga = %s - 0x%llxul; bool ok = ga < 0x%llxul;\n", addr,
-           (unsigned long long)maxwell_gmem_base, (unsigned long long)maxwell_gmem_size);
+        sp(&c->body, "    { ulong ga = %s - 0x%llxul; bool ok = ga < 0x%llxul%s;\n", addr,
+           (unsigned long long)maxwell_gmem_base, (unsigned long long)maxwell_gmem_size, bda_ok);
         }
         static const char *const ld_small[] = {"uint(gmem[ga])", "uint(int(char(gmem[ga])))",
                                                "uint(*(device ushort *)(gmem + ga))", "uint(int(*(device short *)(gmem + ga)))"};
@@ -1913,7 +1918,11 @@ static ShaderInfo *glsl_finish(Ctx *c, bool any_branch, bool dbg) {
     if (c->fail) { free(body.buf); free(c->body.buf); free(c); return info; }
     int set = stage == STAGE_FRAGMENT ? 1 : 0;
     Str s = {0};
-    sp(&s, "%s", glsl_prelude);
+    if (info->uses_gmem && c->bda)  // (extensions right after #version)
+        sp(&s, "#version 460\n#extension GL_EXT_buffer_reference : require\n#extension GL_EXT_buffer_reference_uvec2 : require\n%s",
+           glsl_prelude + strlen("#version 460\n"));
+    else
+        sp(&s, "%s", glsl_prelude);
     static int exact = -1;
     if (exact < 0) exact = getenv("LARECOMP_VK_EXACT_H2F") && atoi(getenv("LARECOMP_VK_EXACT_H2F")) != 0;
     sp(&s, "%s%s", !exact && (stage == STAGE_FRAGMENT || stage == STAGE_COMPUTE) ? glsl_h2f_native : glsl_h2f_exact,
@@ -1926,7 +1935,13 @@ static ShaderInfo *glsl_finish(Ctx *c, bool any_branch, bool dbg) {
         if (!n) n = 1;
         sp(&s, "layout(std140, set = %d, binding = %d) uniform CB%d { uvec4 cb%d[%u]; };\n", set, i, i, i, n);
     }
-    if (info->uses_gmem)
+    if (info->uses_gmem && c->bda) {  // (gmem_.w[i] -> the words at the heap buffer's device address)
+        sp(&s, "layout(std430, set = %d, binding = %d) readonly buffer GMemAddr { uvec2 a; } gmem_addr_;\n"
+               "layout(buffer_reference, std430, buffer_reference_align = 4) %sbuffer GMemRef { uint w[]; };\n"
+               "#define gmem_ GMemRef(gmem_addr_.a)\n",
+           set, GMEM_BUFFER_INDEX, c->uses_gmem_store ? "" : "readonly ");
+        info->gmem_bda = true;
+    } else if (info->uses_gmem)
         sp(&s, "layout(std430, set = %d, binding = %d) %sbuffer GMem { uint w[]; } gmem_;\n", set, GMEM_BUFFER_INDEX,
            c->uses_gmem_store ? "" : "readonly ");
     if (c->uses_rscale && stage != STAGE_VERTEX) {
@@ -2051,6 +2066,7 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
     c->stage = stage;
     c->ipa_mode = -1;
     c->glsl = key && key->glsl;
+    c->bda = c->glsl && maxwell_gmem_bda;  // (one value for the whole translation)
     const uint8_t *sph = blob + 0x30;
     const uint8_t *code = blob + 0x80;
     // compute programs have neither the 0x30-byte NVN header nor an SPH: code starts at the blob

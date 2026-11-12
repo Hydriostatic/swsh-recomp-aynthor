@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "hle.h"
 #include "kernel.h"
+#include "platform.h"
 #include "panel.h"
 
 const char *g_romfs_dir;
@@ -129,6 +130,9 @@ static void teardown(void) {
         if (*p) { (*p)(); n++; }
     kernel_reset();
     if (!plat_reset_guest(GUEST_LO, GUEST_HI)) FATAL("cannot reset guest memory\n");
+#ifdef __ANDROID__
+    plat_android_heap_reset();
+#endif
     backend_guest_memory_reset();
     g_nmodules = 0;
     g_reboot = RT_REBOOT_NONE;

@@ -7,6 +7,7 @@
 
 #include "hle.h"
 #include "kernel.h"
+#include "platform.h"
 #ifdef _WIN32
 #include "platform/windows_threads.h"
 #endif
@@ -145,6 +146,7 @@ static uint64_t heap_size;
 static uint64_t tls_next = TLS_BASE;
 uint64_t g_program_id;  // from main.npdm's ACI0 (runtime/main.c)
 static uint64_t g_user_exception_ctx;  // (HLE heap: wiped by a reboot, kernel_reset forgets it)
+bool g_gpu_shared_heap;  // (Android: set by the Vulkan device, nvn/vulkan/device.c)
 uint64_t kernel_heap_size(void) { return heap_size; }  // bytes from HEAP_BASE set by SetHeapSize
 // Writable guest data regions (heap, mapped/physical memory, module .data): for debug/runtime memory scans.
 int kernel_data_regions(uint64_t *addr, uint64_t *size, int max) {
@@ -752,6 +754,9 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         uint64_t size = x[1];
         if (size > HEAP_MAX) { x[0] = R_OUT_OF_RESOURCE; break; }
         heap_size = size;
+#ifdef __ANDROID__
+        { extern bool g_gpu_shared_heap; if (g_gpu_shared_heap && size) plat_android_share_heap(HEAP_BASE, HEAP_MAX); }  // (all of it at once: it may grow)
+#endif
         region_remove(HEAP_BASE);
         if (size) region_add(HEAP_BASE, size, 5, 3);
         x[0] = R_OK;

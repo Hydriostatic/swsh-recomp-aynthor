@@ -94,7 +94,11 @@ bool plat_android_set_data_dir(const char *dir);  // the game files folder, from
 // The start screen's buttons: the folder picker for kind 0 (game) / 1 (log and saves), the update check / install
 void plat_android_pick_folder_kind(int kind);
 void plat_android_update(bool install);
-void plat_android_build_status(int percent);  // the game code build's notification: 0..100, -1 = ended
+void plat_android_build_status(int percent);
+uint64_t plat_android_share_heap(uint64_t base, uint64_t size);  // the heap as a GPU-shared hardware buffer: bytes, 0 = no
+void plat_android_heap_reset(void);
+void *plat_android_heap_ahb(void);        // its AHardwareBuffer (exec.c imports it), NULL if not shared
+uint64_t plat_android_heap_shared(void);  // bytes of the heap shared from HEAP_BASE  // the game code build's notification: 0..100, -1 = ended
 #endif
 
 // ---- diagnostics

@@ -68,6 +68,7 @@ typedef struct {
     uint32_t out_mask;      // vertex: output varyings; fragment: render targets written
     bool writes_depth, uses_discard, writes_point_size;
     bool uses_gmem;         // global memory access: bind the guest heap at GMEM_BUFFER_INDEX
+    bool gmem_bda;          // ... through a device address held at GMEM_BUFFER_INDEX (translate.c maxwell_gmem_bda)
     bool gmem_stores;       // ... and it stores: the shader writes guest memory (through its storage buffers, or any pointer)
     bool uses_tint;         // fragment: reads the per-draw tint (buffer 19, float4[2]) applied to color target 0
     bool uses_rscale;       // reads the resolution-scale table (fragment/compute buffer 18): float4 [0] = render

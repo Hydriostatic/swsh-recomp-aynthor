@@ -7,6 +7,11 @@
 //  - the data root is the app's folder on shared storage (Android/data/<package>/files), where the player puts the
 //    game files; libraries can't be loaded from there, so the game code is staged in the app's private folder first.
 #define _GNU_SOURCE
+#include <sys/socket.h>
+#include <android/hardware_buffer.h>
+#ifndef LOG
+#define LOG(...) fprintf(stderr, __VA_ARGS__)
+#endif
 #include <SDL3/SDL.h>
 #include <android/log.h>
 #include <dlfcn.h>
@@ -66,6 +71,85 @@ bool plat_reset_guest(uint64_t lo, uint64_t hi) {
 }
 
 void plat_commit(uint64_t addr, uint64_t size) { (void)addr; (void)size; }
+
+// ---- guest heap shared with the GPU
+// Adreno's driver can't import ordinary memory into Vulkan (no VK_EXT_external_memory_host), so shaders that read or
+// write the game's memory (LDG / STG: particles, instance data) saw zeros. Instead the heap itself is made of an Android
+// hardware buffer: its dma-buf is mapped over the heap's addresses for the CPU and imported by Vulkan for the GPU
+// (exec.c gmem_import), the same memory on both sides. The fd comes out of AHardwareBuffer_sendHandleToUnixSocket.
+static AHardwareBuffer *g_heap_ahb;
+static uint64_t g_heap_shared;
+static bool g_heap_tried;
+static int recv_fds(int sock, int *fds, int max) {
+    char data[1024];
+    union { struct cmsghdr h; char buf[CMSG_SPACE(sizeof(int) * 64)]; } cm;
+    struct iovec iov = {data, sizeof data};
+    struct msghdr m = {.msg_iov = &iov, .msg_iovlen = 1, .msg_control = cm.buf, .msg_controllen = sizeof cm.buf};
+    if (recvmsg(sock, &m, MSG_DONTWAIT) < 0) return 0;
+    int n = 0;
+    for (struct cmsghdr *c = CMSG_FIRSTHDR(&m); c; c = CMSG_NXTHDR(&m, c))
+        if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+            int k = (int)((c->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+            for (int i = 0; i < k; i++) {
+                int fd;
+                memcpy(&fd, CMSG_DATA(c) + i * sizeof(int), sizeof fd);
+                if (n < max) fds[n++] = fd; else close(fd);
+            }
+        }
+    return n;
+}
+static bool share_heap_try(uint64_t base, uint64_t size) {
+    AHardwareBuffer_Desc d = {.width = (uint32_t)size, .height = 1, .layers = 1, .format = AHARDWAREBUFFER_FORMAT_BLOB,
+                              .usage = AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER | AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN |
+                                       AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN};
+    AHardwareBuffer *b = NULL;
+    if (AHardwareBuffer_allocate(&d, &b) != 0 || !b) { LOG("[heap] hardware buffer of %llu MB: allocation failed\n", (unsigned long long)(size >> 20)); return false; }
+    int sv[2], fds[16], nfd = 0;
+    bool ok = false;
+    if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv) == 0) {
+        if (AHardwareBuffer_sendHandleToUnixSocket(b, sv[0]) == 0) nfd = recv_fds(sv[1], fds, 16);
+        close(sv[0]);
+        close(sv[1]);
+    }
+    for (int i = 0; i < nfd; i++) {  // (the dma-buf: the fd as large as the buffer that maps where the heap is)
+        off_t len = ok ? 0 : lseek(fds[i], 0, SEEK_END);
+        if (!ok && len >= (off_t)size &&
+            mmap((void *)(uintptr_t)base, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fds[i], 0) == (void *)(uintptr_t)base) {
+            volatile uint32_t *w = (volatile uint32_t *)(uintptr_t)base;  // (the mapping works for reads and writes)
+            w[0] = 0x12345678u;
+            ok = w[0] == 0x12345678u;
+            w[0] = 0;
+            if (!ok) plat_reset_guest(base, base + size);
+        }
+        close(fds[i]);
+    }
+    if (!ok) {
+        LOG("[heap] hardware buffer of %llu MB: no mappable fd (%d fds)\n", (unsigned long long)(size >> 20), nfd);
+        AHardwareBuffer_release(b);
+        return false;
+    }
+    if (g_heap_ahb) AHardwareBuffer_release(g_heap_ahb);
+    g_heap_ahb = b;
+    g_heap_shared = size;
+    LOG("[heap] %llu MB of the guest heap shared with the GPU\n", (unsigned long long)(size >> 20));
+    return true;
+}
+uint64_t plat_android_share_heap(uint64_t base, uint64_t size) {
+    // (once per boot: a later SetHeapSize finds the game's data in the heap, which a new mapping would wipe)
+    if (g_heap_shared || g_heap_tried) return g_heap_shared;  // (a heap grown later: the part shared stays as it is)
+    g_heap_tried = true;
+    size = (size + 0xFFFF) & ~0xFFFFull;
+    if (size > 0xFFFF0000ull) size = 0xFFFF0000ull;  // (a buffer's width is 32-bit)
+    // (all of it, or failing that the first 2 GB / 1 GB, where the game sets up its heap first)
+    if (!share_heap_try(base, size) && (size <= (2ull << 30) || !share_heap_try(base, 2ull << 30)) &&
+        (size <= (1ull << 30) || !share_heap_try(base, 1ull << 30)))
+        return 0;
+    return g_heap_shared;
+}
+void plat_android_heap_reset(void) { g_heap_shared = 0; g_heap_tried = false; }  // (reboot: the guest window was mapped anew; the buffer
+                                                             //  stays until the next heap replaces it - the GPU may use it)
+void *plat_android_heap_ahb(void) { return g_heap_shared ? g_heap_ahb : NULL; }
+uint64_t plat_android_heap_shared(void) { return g_heap_shared; }
 
 void *plat_reserve_lazy(uint64_t size) {
     void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);

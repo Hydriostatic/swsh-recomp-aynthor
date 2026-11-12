@@ -328,8 +328,7 @@ static void key_defaults(ShaderKey *k) {
 static ShaderInfo *build_stage(const Stage *s, const ShaderKey *key, bool want_info, uint64_t id) {
     bool todo = claim(id);
     if (!todo && !want_info) { atomic_fetch_add(&stat_skipped, 1); return NULL; }
-    maxwell_gmem_base = HEAP_BASE;  // (as exec.c translate_program)
-    maxwell_gmem_size = HEAP_MAX;
+    { extern void vk_gmem_translate_setup(void); vk_gmem_translate_setup(); }  // (as exec.c translate_program)
     ShaderInfo *si = maxwell_translate(s->code, s->const_off ? s->const_off : 0x10000, s->stage, key);
     if (!si || !si->msl) { atomic_fetch_add(&stat_failed, 1); if (todo) finished(id); maxwell_free(si); return NULL; }
     if (getenv("LARECOMP_PREP_DEBUG")) {

@@ -622,6 +622,17 @@ static void wav_header(FILE *f, uint32_t bytes) {
     fseek(f, 0, SEEK_END);
 }
 
+
+// Android pauses the audio device while the app is in the background: the queue stops draining, and a feeder waiting
+// for it would hold the game's buffers forever (its audio thread then gave up, tore its audio down and stopped the
+// game). Meanwhile the buffers are released in real time and their sound dropped.
+static bool audio_suspended(void) {
+#ifdef __ANDROID__
+    return plat_android_in_background();
+#else
+    return false;
+#endif
+}
 static void *renderer_tick(void *arg) {
     Renderer *r = arg;
     float out[2 * 4096];
@@ -641,8 +652,11 @@ static void *renderer_tick(void *arg) {
         }
     }
     while (!r->quit) {
-        if (r->stream) {
-            while (SDL_GetAudioStreamQueued(r->stream) >= target && !r->quit) {
+        bool susp = audio_suspended();
+        if (r->stream && susp) SDL_ClearAudioStream(r->stream);
+        if (r->stream && !susp) {
+            next = 0;
+            while (SDL_GetAudioStreamQueued(r->stream) >= target && !r->quit && !audio_suspended()) {
                 struct timespec ts = {0, 1000000};
                 nanosleep(&ts, NULL);
             }
@@ -661,7 +675,7 @@ static void *renderer_tick(void *arg) {
             memset(out, 0, frame_bytes);
         }
         pthread_mutex_unlock(&r->lock);
-        if (r->stream) { apply_gain(r->stream); SDL_PutAudioStreamData(r->stream, out, frame_bytes); }
+        if (r->stream && !susp) { apply_gain(r->stream); SDL_PutAudioStreamData(r->stream, out, frame_bytes); }
         if (r->wav && r->state == 0) {
             fwrite(out, 1, frame_bytes, r->wav);
             r->wav_bytes += frame_bytes;
@@ -1127,7 +1141,9 @@ static void *audout_thread(void *arg) {
         pthread_mutex_unlock(&a->lock);
         if (!size) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); continue; }
         uint64_t frames = size / (2 * ch);
-        if (a->stream) {
+        bool susp = audio_suspended();
+        if (a->stream && susp) SDL_ClearAudioStream(a->stream);
+        if (a->stream && !susp) {
             apply_gain(a->stream);
             if (a->played && SDL_GetAudioStreamQueued(a->stream) == 0) underruns++;  // ran dry: an audible gap
             uint64_t now = plat_now_ns();
@@ -1136,7 +1152,7 @@ static void *audout_thread(void *arg) {
                 underruns = 0, last_report = now;
             }
             if (data) SDL_PutAudioStreamData(a->stream, (const void *)(uintptr_t)data, (int)size);
-            while (SDL_GetAudioStreamQueued(a->stream) > target && !a->quit) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); }
+            while (SDL_GetAudioStreamQueued(a->stream) > target && !a->quit && !audio_suspended()) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); }
         } else {
             uint64_t ns = frames * 1000000000ull / (a->rate ? a->rate : 48000);
             struct timespec ts = {(time_t)(ns / 1000000000ull), (long)(ns % 1000000000ull)};

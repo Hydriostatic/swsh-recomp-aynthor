@@ -1823,10 +1823,10 @@ static void compile_program(void *arg) {
     atomic_store(&p->state, p->vs && p->fs ? 1 : 2);
 }
 
+static void gmem_translate_setup(void);
 static void translate_program(void *arg) {
     Prog *p = arg;
-    maxwell_gmem_base = HEAP_BASE;
-    maxwell_gmem_size = HEAP_MAX;
+    gmem_translate_setup();
     uint64_t t0 = SDL_GetTicksNS();
     p->vi = maxwell_translate((const uint8_t *)(uintptr_t)p->code[0], p->cmax[0], STAGE_VERTEX, &p->vkey);
     // Experiment (research): LARECOMP_EXP_VS_EARLY=<vertex program address, hex>: that program's vertex shader returns at
@@ -3027,8 +3027,87 @@ static VkDescriptorBufferInfo cbuf_info(int stage, ShaderInfo *si, int k, uint32
 static VkBuffer gmem_buf;
 static VkDeviceMemory gmem_mem;
 static uint64_t gmem_size;
+static uint32_t gmem_addr[4];  // (Android, shared heap: the buffer's device address, lo / hi, for gmem_addr_info)
+
+#ifdef __ANDROID__
+#include <vulkan/vulkan_android.h>
+// Android without host-pointer import: the heap is an AHardwareBuffer the CPU maps at HEAP_BASE (platform/android.c
+// plat_android_share_heap); imported here, and read by shaders through its device address (a storage buffer's range is
+// 128 MB on Adreno, the heap ~3 GB): translate.c maxwell_gmem_bda.
+static bool gmem_import_ahb(void) {
+    struct AHardwareBuffer *ahb = plat_android_heap_ahb();
+    uint64_t size = plat_android_heap_shared();
+    if (!ahb || !size) return false;
+    PFN_vkGetAndroidHardwareBufferPropertiesANDROID props =
+        (PFN_vkGetAndroidHardwareBufferPropertiesANDROID)vkGetDeviceProcAddr(g_vk.dev, "vkGetAndroidHardwareBufferPropertiesANDROID");
+    VkAndroidHardwareBufferPropertiesANDROID hp = {.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID};
+    if (!props || props(g_vk.dev, ahb, &hp) != VK_SUCCESS || !hp.memoryTypeBits) { LOG("[vk] heap buffer: no properties\n"); return false; }
+    VkExternalMemoryBufferCreateInfo eb = {.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
+                                           .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID};
+    VkBufferCreateInfo bi = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .pNext = &eb, .size = size,
+                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT};
+    VkBuffer buf;
+    VkResult r = vkCreateBuffer(g_vk.dev, &bi, NULL, &buf);
+    if (r != VK_SUCCESS) { LOG("[vk] heap buffer: vkCreateBuffer %d\n", r); return false; }
+    VkMemoryRequirements mr;
+    vkGetBufferMemoryRequirements(g_vk.dev, buf, &mr);
+    uint32_t bits = hp.memoryTypeBits & mr.memoryTypeBits;
+    if (!bits) bits = hp.memoryTypeBits;
+    VkImportAndroidHardwareBufferInfoANDROID imp = {.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID, .buffer = ahb};
+    VkMemoryDedicatedAllocateInfo ded = {.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO, .pNext = &imp, .buffer = buf};
+    VkMemoryAllocateFlagsInfo fl = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, .pNext = &ded,
+                                    .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT};
+    VkMemoryAllocateInfo ai = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &fl, .allocationSize = hp.allocationSize,
+                               .memoryTypeIndex = (uint32_t)__builtin_ctz(bits)};
+    VkDeviceMemory mem;
+    r = vkAllocateMemory(g_vk.dev, &ai, NULL, &mem);
+    if (r != VK_SUCCESS) {
+        fl.pNext = &imp;  // (some drivers want no dedicated-allocation info for buffers)
+        r = vkAllocateMemory(g_vk.dev, &ai, NULL, &mem);
+    }
+    if (r != VK_SUCCESS) { LOG("[vk] heap buffer: import %d\n", r); vkDestroyBuffer(g_vk.dev, buf, NULL); return false; }
+    vkBindBufferMemory(g_vk.dev, buf, mem, 0);
+    VkBufferDeviceAddressInfo da = {.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = buf};
+    uint64_t addr = vkGetBufferDeviceAddress(g_vk.dev, &da);
+    if (!addr) { LOG("[vk] heap buffer: no device address\n"); vkDestroyBuffer(g_vk.dev, buf, NULL); vkFreeMemory(g_vk.dev, mem, NULL); return false; }
+    if (gmem_buf) {
+        vk_wait_seq(submit_seq);
+        vkDestroyBuffer(g_vk.dev, gmem_buf, NULL);
+        vkFreeMemory(g_vk.dev, gmem_mem, NULL);
+    }
+    gmem_buf = buf;
+    gmem_mem = mem;
+    gmem_size = size;
+    gmem_addr[0] = (uint32_t)addr;
+    gmem_addr[1] = (uint32_t)(addr >> 32);
+    LOG("[vk] guest heap imported for shader global memory: %llu MB (hardware buffer, memory type %u)\n",
+        (unsigned long long)(size >> 20), ai.memoryTypeIndex);
+    return true;
+}
+#endif
+
+// What the translator assumes the shared part of the heap is (the shaders' bounds check), and whether it addresses it
+// through a device address (translate.c maxwell_gmem_bda): set before each translation.
+static void gmem_translate_setup(void) {
+    extern bool maxwell_gmem_bda;
+    maxwell_gmem_base = HEAP_BASE;
+    maxwell_gmem_size = HEAP_MAX;
+    maxwell_gmem_bda = false;
+#ifdef __ANDROID__
+    if (g_vk.ahb_heap && plat_android_heap_shared()) {
+        maxwell_gmem_size = plat_android_heap_shared();
+        maxwell_gmem_bda = true;
+    }
+#endif
+}
+void vk_gmem_translate_setup(void) { gmem_translate_setup(); }
 
 static bool gmem_import(uint64_t size) {
+#ifdef __ANDROID__
+    if (g_vk.ahb_heap) return gmem_import_ahb();
+#endif
     PFN_vkGetMemoryHostPointerPropertiesEXT props =
         (PFN_vkGetMemoryHostPointerPropertiesEXT)vkGetDeviceProcAddr(g_vk.dev, "vkGetMemoryHostPointerPropertiesEXT");
     VkMemoryHostPointerPropertiesEXT mp = {.sType = VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT};
@@ -3067,17 +3146,31 @@ static uint64_t gmem_tried;  // heap size the import was last attempted for (gme
 
 static VkDescriptorBufferInfo gmem_info(void) {
     static int off = -1;
-    if (off < 0) off = getenv("LARECOMP_VK_NO_GMEM") != NULL || !g_vk.host_import;
+    if (off < 0) off = getenv("LARECOMP_VK_NO_GMEM") != NULL || !(g_vk.host_import || g_vk.ahb_heap);
     uint64_t want = (kernel_heap_size() + 0xFFFF) & ~0xFFFFull;
     if (want > HEAP_MAX) want = HEAP_MAX;
+#ifdef __ANDROID__
+    if (g_vk.ahb_heap) want = plat_android_heap_shared();  // (0 before the heap is set: nothing to import yet)
+    if (g_vk.ahb_heap && !want) off = -1;
+#endif
     if (!off && want > gmem_size && !gmem_import(want)) {
         LOG("[vk] guest heap import failed (%llu MB): shader global memory reads return zero\n", (unsigned long long)(want >> 20));
         off = 1;
     }
-    if (gmem_buf) return (VkDescriptorBufferInfo){gmem_buf, 0, gmem_size};
-    static uint32_t zero[1024];
+    if (gmem_buf && !g_vk.ahb_heap) return (VkDescriptorBufferInfo){gmem_buf, 0, gmem_size};
+    static uint32_t zero[1024];  // (a shared heap is too large for a storage buffer's range: shaders use gmem_addr_info)
     VkSpan s = vk_transient_copy(zero, sizeof zero, 256);
     return (VkDescriptorBufferInfo){s.buf, s.off, sizeof zero};
+}
+
+// Shaders translated with maxwell_gmem_bda: the binding holds the heap buffer's device address (uvec2), or 0 while
+// there is none (their bounds check then never passes: maxwell_gmem_size is 0 - see gmem_translate_setup).
+static VkDescriptorBufferInfo gmem_addr_info(void) {
+    (void)gmem_info();  // (imports on first use)
+    uint32_t a[4] = {gmem_addr[0], gmem_addr[1], 0, 0};
+    if (!gmem_buf) a[0] = a[1] = 0;
+    VkSpan s = vk_transient_copy(a, sizeof a, 256);
+    return (VkDescriptorBufferInfo){s.buf, s.off, sizeof a};
 }
 
 // Once a present (backend_present): the guest heap is imported, or re-imported after it grew, here rather than at the
@@ -3085,10 +3178,13 @@ static VkDescriptorBufferInfo gmem_info(void) {
 // stalled the first battle / effect that used it; at a present it happens at boot (the heap is set first thing).
 void vk_gmem_prepare(void) {
     static int off = -1;
-    if (off < 0) off = getenv("LARECOMP_VK_NO_GMEM") != NULL || !g_vk.host_import || (getenv("LARECOMP_GMEM_EARLY") && !atoi(getenv("LARECOMP_GMEM_EARLY")));
+    if (off < 0) off = getenv("LARECOMP_VK_NO_GMEM") != NULL || !(g_vk.host_import || g_vk.ahb_heap) || (getenv("LARECOMP_GMEM_EARLY") && !atoi(getenv("LARECOMP_GMEM_EARLY")));
     if (off) return;
     uint64_t want = (kernel_heap_size() + 0xFFFF) & ~0xFFFFull;
     if (want > HEAP_MAX) want = HEAP_MAX;
+#ifdef __ANDROID__
+    if (g_vk.ahb_heap) { want = plat_android_heap_shared(); if (!want) return; }
+#endif
     if (want > gmem_size && want != gmem_tried) (void)gmem_info();
 }
 
@@ -3219,12 +3315,15 @@ static bool guest_direct(uint64_t addr, uint64_t size, VkBuffer *buf, VkDeviceSi
 volatile int g_heal_tex, g_heal_vtx;  // (LARECOMP_HEAL_KEYS research keys, runtime/hle/input.c)
 static bool vtx_direct(uint64_t addr, uint64_t size, VkBuffer *buf, VkDeviceSize *off) {
     if (g_heal_vtx) gpuw_unknown = true;
-    if (ring_gpu_enabled() && !gpuw_overlaps(addr, size)) { stat_vtx_copied++; return false; }
+    // (a heap shared through a hardware buffer serves the shaders' global memory and the ranges the GPU writes; other
+    //  vertex data stays copied, as it was before the heap was shared)
+    if ((ring_gpu_enabled() || g_vk.ahb_heap) && !gpuw_overlaps(addr, size)) { stat_vtx_copied++; return false; }
     bool d = guest_direct(addr, size, buf, off);
     if (d) stat_vtx_direct++;
     return d;
 }
 bool vk_guest_direct(uint64_t addr, uint64_t size, VkBuffer *buf, VkDeviceSize *off) {  // (cbuf_info, above)
+    if (g_vk.ahb_heap) return false;  // (uniforms copied, as before the heap was shared)
     return guest_direct(addr, size, buf, off);
 }
 
@@ -3333,7 +3432,7 @@ static VkDescriptorSet stage_set(Prog *p, VkDescriptorSetLayout layout, uint32_t
             bi[n] = cbuf_info(stage, si, (int)b->binding, gx, gy, gz);
             w[n].pBufferInfo = &bi[n];
         } else if (b->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
-            bi[n] = gmem_info();
+            bi[n] = si->gmem_bda ? gmem_addr_info() : gmem_info();
             w[n].pBufferInfo = &bi[n];
         } else {
             continue;  // rscale / tint: written below, once the textures (and their scales) are known
@@ -3399,8 +3498,7 @@ static CsProg *compute_program(NvnProgram *np) {
     for (int i = 0; i < n; i++) if (tab[i].addr == key) return tab[i].cp;
     CsProg *cp = calloc(1, sizeof *cp);
     if (n < 256) { tab[n].addr = key; tab[n].cp = cp; g_cs_n = n + 1; }
-    maxwell_gmem_base = HEAP_BASE;
-    maxwell_gmem_size = HEAP_MAX;
+    gmem_translate_setup();
     ShaderKey k = {0};
     k.glsl = 1;
     cp->si = maxwell_translate((const uint8_t *)(uintptr_t)ss->code_addr, ss->const_offset ? ss->const_offset : 0x10000, STAGE_COMPUTE, &k);

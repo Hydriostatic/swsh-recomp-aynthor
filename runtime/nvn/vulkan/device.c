@@ -49,7 +49,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debug_cb(VkDebugUtilsMessageSeverityFlagBi
 static void create_instance(void) {
     Uint32 n_sdl = 0;
     const char *const *sdl_ext = SDL_Vulkan_GetInstanceExtensions(&n_sdl);
-    const char *ext[16];
+    const char *ext[24];
     uint32_t n_ext = 0;
     for (Uint32 i = 0; i < n_sdl && n_ext < 14; i++) ext[n_ext++] = sdl_ext[i];
     bool validate = getenv("LARECOMP_VK_VALIDATION") != NULL;
@@ -200,6 +200,15 @@ static void create_device(void) {
     if (g_vk.divisor) ext[n_ext++] = VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME;
     g_vk.host_import = has_ext(ep, ne, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);  // guest heap as a GPU buffer (exec.c)
     if (g_vk.host_import) ext[n_ext++] = VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME;
+#ifdef __ANDROID__
+    // No host-pointer import (Adreno's driver): the guest heap is instead made of an Android hardware buffer that the
+    // CPU maps at the heap's address and the GPU imports, and shaders reach it through buffer device addresses
+    // (exec.c gmem_*; runtime/platform/android.c plat_android_share_heap). Decided with the features below.
+    bool ahb_exts = !g_vk.host_import && !getenv("LARECOMP_NO_SHARED_HEAP") &&
+                    has_ext(ep, ne, "VK_ANDROID_external_memory_android_hardware_buffer") &&
+                    has_ext(ep, ne, VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
+    if (!g_vk.host_import) LOG("[vk] no host memory import; Android hardware buffers %s\n", ahb_exts ? "available" : "missing");
+#endif
     // Graphics pipeline library (exec.c): a new state combination links precompiled per-stage parts instead of compiling a
     // whole pipeline in the driver. On its own a cold part costs about what a whole pipeline does (the cost is in each
     // shader: reports/cycles/005.md, cycle 8), but the shader preparation (prep.c) builds every stage's part ahead of
@@ -313,6 +322,15 @@ static void create_device(void) {
         KEEP(f11, q11, storageBuffer16BitAccess)
         if (g_vk.custom_border) { KEEP(cbc, qcbc, customBorderColors) KEEP(cbc, qcbc, customBorderColorWithoutFormat) }
 #undef KEEP
+        if (ahb_exts && q12.bufferDeviceAddress) {
+            ext[n_ext++] = "VK_ANDROID_external_memory_android_hardware_buffer";
+            ext[n_ext++] = VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME;
+            f12.bufferDeviceAddress = VK_TRUE;
+            g_vk.ahb_heap = true;
+            extern bool g_gpu_shared_heap;
+            g_gpu_shared_heap = true;  // (kernel.c SetHeapSize: the heap as a hardware buffer)
+            LOG("[vk] guest heap: shared with the GPU through a hardware buffer (shader global memory)\n");
+        }
         LOG("[vk] textures: BC %s, ASTC %s\n", h->textureCompressionBC ? "native" : "decoded on the CPU (bcdec.c)",
             h->textureCompressionASTC_LDR ? "native" : "decoded");
     }
