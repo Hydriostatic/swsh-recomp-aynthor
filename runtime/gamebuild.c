@@ -702,6 +702,7 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
             add(&a, t.cc);
             add(&a, "ld.lld");
             add(&a, "-shared");
+            add(&a, "--eh-frame-hdr");  // (the unwind tables found by the unwinder: crash backtraces through the game code)
             add(&a, "-z");
             add(&a, "max-page-size=16384");
             add(&a, "-o");
