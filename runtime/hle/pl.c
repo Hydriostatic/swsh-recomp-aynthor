@@ -124,6 +124,18 @@ static void load_fonts(void) {
                          "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf"};
     for (size_t i = 0; i < sizeof std / sizeof *std && !fonts[0].addr; i++)
         if (std[i]) load_one(std[i], &fonts[0]);
+#ifdef __ANDROID__
+    // Android: none of the above. DejaVu Sans as on Linux, shipped in the APK (unpacked by runtime/platform/
+    // android.c), then the system's static Roboto (TrueType; Roboto-Regular.ttf is a variable font, and the CJK
+    // ones are CFF, which the game's font engine can't read)
+    if (!fonts[0].addr) {
+        char shipped[1100];
+        snprintf(shipped, sizeof shipped, "%s/res/DejaVuSans.ttf", plat_android_private_dir());
+        const char *android[] = {shipped, "/system/fonts/RobotoStatic-Regular.ttf", "/system/fonts/DroidSans.ttf",
+                                 "/system/fonts/Roboto-Regular.ttf"};
+        for (size_t i = 0; i < sizeof android / sizeof *android && !fonts[0].addr; i++) load_one(android[i], &fonts[0]);
+    }
+#endif
     if (!fonts[0].addr) FATAL("no usable system font substitute\n");
     if (!load_one("fonts/nintendo_ext_003.bfttf", &fonts[1])) load_one("fonts/nintendo_ext_003.ttf", &fonts[1]);
 }

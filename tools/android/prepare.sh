@@ -18,4 +18,5 @@ cp -R "$SDL/android-project/app/src/main/java/org/libsdl/app" android/app/src/ma
 mkdir -p android/app/src/main/assets
 cp third_party/fonts/Baloo2/Baloo2-SemiBold.ttf android/app/src/main/assets/
 cp docs/icon/icon_1024.png android/app/src/main/assets/icon.png
+cp third_party/fonts/DejaVu/DejaVuSans.ttf android/app/src/main/assets/  # (the Switch's system font stand-in, runtime/hle/pl.c)
 echo "prepared: game code id $GAMELIB_ID_ANDROID"
