@@ -313,7 +313,14 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     mkdir(work, 0755);
     if (t.zig) {  // its caches in the work folder too (deleted below), not ~/.cache: hundreds of MB, used once
         char zc[1200];
+#ifdef __ANDROID__
+        // (the app's private storage: shared storage - Download and the like - has no file locks, which zig's cache
+        //  needs: "checking cache failed: manifest_create Unexpected")
+        snprintf(zc, sizeof zc, "%s/zig-cache", plat_android_private_dir());
+        plat_remove_tree(zc);
+#else
         snprintf(zc, sizeof zc, "%s" SEP "zig-cache", work);
+#endif
 #ifdef _WIN32
         _putenv_s("ZIG_GLOBAL_CACHE_DIR", zc);
         _putenv_s("ZIG_LOCAL_CACHE_DIR", zc);
@@ -528,6 +535,9 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     }
     free(units.u);
     rt_remove_game_file(game_dir, ".gamebuild");  // the C, the objects, the logs
+#ifdef __ANDROID__
+    { char zc[1200]; snprintf(zc, sizeof zc, "%s/zig-cache", plat_android_private_dir()); plat_remove_tree(zc); }
+#endif
     LOG("[gamebuild] %s in %.0fs\n", ok ? "done" : "failed", (double)(plat_now_ns() - t0) / 1e9);
     if (ok && o->progress) o->progress(1, "Finishing...");
     return ok;

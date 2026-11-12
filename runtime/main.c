@@ -28,8 +28,15 @@ static void run_array(Cpu *c, uint64_t arr, uint64_t size) {
 // __nnmusl_init_dso and then runs its init_array; fall back to the array if there is no DT_INIT.
 static void module_init(Cpu *c, Module *m) {
     LOG("init %s (DT_INIT %llx, %llu init_array entries)\n", m->name, m->init, m->init_array_sz / 8);
-    if (m->init) guest_call(c, m->init);
-    else run_array(c, m->init_array, m->init_array_sz);
+    if (m->init && !dispatch_lookup(m->init)) {
+        // (game code built before tools/gen.py added DT_INIT itself: the array without the musl registration)
+        LOG("init %s: DT_INIT %llx is not in the game code: running its init_array instead\n", m->name, m->init);
+        run_array(c, m->init_array, m->init_array_sz);
+    } else if (m->init) {
+        guest_call(c, m->init);
+    } else {
+        run_array(c, m->init_array, m->init_array_sz);
+    }
 }
 
 static void rtld_init_sdk(Cpu *c) {  // the SDK, then the subsdk modules that link against it

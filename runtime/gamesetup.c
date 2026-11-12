@@ -256,6 +256,23 @@ static bool build_code(void) {
     return true;
 }
 
+// a/ and dir/name hold the same bytes (the game's main: the same build of the game)
+static bool same_file(const char *a, const char *dir, const char *name) {
+    char b[1100];
+    snprintf(b, sizeof b, "%s/%s", dir, name);
+    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
+    bool same = fa && fb;
+    static char x[1 << 16], y[1 << 16];
+    while (same) {
+        size_t n = fread(x, 1, sizeof x, fa), m = fread(y, 1, sizeof y, fb);
+        if (n != m || memcmp(x, y, n)) same = false;
+        if (!n) break;
+    }
+    if (fa) fclose(fa);
+    if (fb) fclose(fb);
+    return same;
+}
+
 static void *setup_thread(void *arg) {
     (void)arg;
     g_progress = 0;
@@ -280,8 +297,33 @@ static void *setup_thread(void *arg) {
     }
     if (g_state >= SETUP_FAIL_NOT_FOUND) { g_running = false; return NULL; }
 
+    // the game code already built from this same exefs (setting up the folder again): kept, not built again
+    bool keep_code = same_file(ROOT "/exefs/main", f.exefs, "main") && gamelib_present(ROOT);
+    char kept[1100] = "";
+    if (keep_code) {
+        snprintf(kept, sizeof kept, "%s.kept", ROOT);
+        mkdir(kept, 0755);
+        char a[1200], b[1200];
+        snprintf(a, sizeof a, ROOT "/" GAMELIB_NAME);
+        snprintf(b, sizeof b, "%s/" GAMELIB_NAME, kept);
+        keep_code = rename(a, b) == 0;
+        snprintf(a, sizeof a, ROOT "/" GAMELIB_NAME ".id");
+        snprintf(b, sizeof b, "%s/" GAMELIB_NAME ".id", kept);
+        keep_code = keep_code && rename(a, b) == 0;
+        LOG("[setup] the game code built from this exefs is kept%s\n", keep_code ? "" : " - no: it couldn't be moved aside");
+    }
     rt_remove_game_files(ROOT);  // (an earlier or interrupted setup's)
     mkdir(ROOT, 0755);
+    if (keep_code) {
+        char a[1200], b[1200];
+        snprintf(a, sizeof a, "%s/" GAMELIB_NAME, kept);
+        snprintf(b, sizeof b, ROOT "/" GAMELIB_NAME);
+        rename(a, b);
+        snprintf(a, sizeof a, "%s/" GAMELIB_NAME ".id", kept);
+        snprintf(b, sizeof b, ROOT "/" GAMELIB_NAME ".id");
+        rename(a, b);
+        rmdir(kept);
+    }
     g_state = SETUP_COPYING;
     g_phase0 = 0, g_phase1 = 0.01f;
     bool ok = true;

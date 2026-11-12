@@ -19,7 +19,7 @@ from unicorn import arm64_const as A
 
 from analyze import eh_frame_functions
 from lifter import Insn, Lifter, Unsupported, bits, emit_asm_batch, hx, sext
-from nso import Nso, R_AARCH64_RELATIVE
+from nso import Nso, R_AARCH64_RELATIVE, DT_INIT, DT_FINI
 
 SCRATCH_MEM = 0x7300000000
 
@@ -79,6 +79,11 @@ class Module:
         for off, typ, sym, add in n.relocs:
             if typ == R_AARCH64_RELATIVE:
                 starts.add(b + add)
+        # what the loader calls (runtime/main.c module_init): DT_INIT / DT_FINI, which nothing in the module itself
+        # may reference (Sword's subsdk0: its DT_INIT was left out, "no function at <base>+0x30" at startup)
+        for tag in (DT_INIT, DT_FINI):
+            if n.dyn.get(tag):
+                starts.add(b + n.dyn[tag])
         starts = sorted(a for a in starts if self.in_text(a))
         return starts
 
