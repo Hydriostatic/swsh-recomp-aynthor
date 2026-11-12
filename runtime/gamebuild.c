@@ -12,6 +12,9 @@
 #include "paths.h"
 #include "platform.h"
 #include "rt.h"
+#ifdef __ANDROID__
+#include "romfs_build.h"
+#endif
 
 // From the Makefile: the flags the game code is compiled and linked with (as `make` builds it in a source checkout)
 #ifndef GAMELIB_CFLAGS
@@ -304,7 +307,14 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         return false;
     }
     char work[1100], lib[1100], tmp[1100];
+#ifdef __ANDROID__
+    // the generated C and the objects (a thousand files, over 1 GB) in the app's private storage: shared storage
+    // (Download...) goes through Android's slower FUSE layer
+    snprintf(work, sizeof work, "%s/gamebuild", plat_android_private_dir());
+    plat_remove_tree(work);
+#else
     snprintf(work, sizeof work, "%s" SEP ".gamebuild", game_dir);
+#endif
     snprintf(lib, sizeof lib, "%s" SEP "%s", game_dir, GAMELIB_NAME);
     snprintf(tmp, sizeof tmp, "%s" SEP "%s.tmp", work, GAMELIB_NAME);
     rt_remove_game_file(game_dir, ".gamebuild");
@@ -527,7 +537,11 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         char idp[1100];
         snprintf(idp, sizeof idp, "%s.id", lib);
         FILE *f = NULL;
-        if (rename(tmp, lib) != 0 || !(f = fopen(idp, "wb")) || fprintf(f, "%s\n", GAMELIB_ID) < 0) {
+        bool moved = rename(tmp, lib) == 0;
+#ifdef __ANDROID__
+        if (!moved) moved = romfs_copy_file(tmp, lib, NULL);  // (private storage -> the game files folder)
+#endif
+        if (!moved || !(f = fopen(idp, "wb")) || fprintf(f, "%s\n", GAMELIB_ID) < 0) {
             snprintf(why, why_size, "the game code couldn't be saved");
             ok = false;
         }
@@ -535,6 +549,9 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     }
     free(units.u);
     rt_remove_game_file(game_dir, ".gamebuild");  // the C, the objects, the logs
+#ifdef __ANDROID__
+    plat_remove_tree(work);
+#endif
 #ifdef __ANDROID__
     { char zc[1200]; snprintf(zc, sizeof zc, "%s/zig-cache", plat_android_private_dir()); plat_remove_tree(zc); }
 #endif

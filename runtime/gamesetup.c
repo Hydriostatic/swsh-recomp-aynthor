@@ -241,9 +241,9 @@ static bool build_code(void) {
     int cores = SDL_GetNumLogicalCPUCores(), ram_gb = SDL_GetSystemRAM() / 1024;
     GameBuildOpts o = {build_progress, cores < ram_gb - 2 ? cores : ram_gb - 2 > 1 ? ram_gb - 2 : 1};
 #ifdef __ANDROID__
-    // (a handheld shares its RAM with the system, and Android ends an app that takes too much: about 2 GB per
-    //  compiler, with the generators' share and the system's kept free)
-    int fit = (ram_gb - 5) / 2;
+    // (a handheld shares its RAM with the system, and Android ends an app that takes too much: about 1.5 GB per
+    //  compiler, with the generators' and the system's share kept free - 5 at once on a 12 GB AYN Thor)
+    int fit = (ram_gb - 3) * 2 / 3;
     if (o.jobs > fit) o.jobs = fit > 1 ? fit : 1;
 #endif
     char why[256] = "";
