@@ -136,11 +136,29 @@ static void SDLCALL picked_game(void *, const char *const *files, int) {
 // Android's folder picker hands out content:// links native code can't read: MainActivity.pickGameFolder asks for
 // all-files access first and turns the picked folder into its path on storage (runtime/platform/android.c calls it
 // and calls back here). Without the permission it answers with the import folder in the app's own storage.
-extern "C" void launcher_android_folder_picked(const char *path) {
-    const char *const files[] = {path, NULL};
-    picked_game(NULL, files, 0);
+static char g_user_msg[300], g_data_msg[300], g_update_text[300];
+static bool g_update_avail;
+extern "C" void launcher_android_folder_picked(int kind, const char *path) {
+    if (kind == 0) {
+        const char *const files[] = {path, NULL};
+        picked_game(NULL, files, 0);
+        return;
+    }
+    bool ok = kind == 1 ? plat_android_set_user_dir(path)  // (the log and saves folder: the saves move along)
+                        : plat_android_set_data_dir(path);  // (the game files folder: from the next start)
+    pthread_mutex_lock(&g_pick_lock);
+    snprintf(kind == 1 ? g_user_msg : g_data_msg, sizeof g_user_msg, "%s", ok ? (kind == 1 ? "" : "restart") : path);
+    pthread_mutex_unlock(&g_pick_lock);
+}
+// MainActivity's updater: "avail:<text>" when a newer build can be installed, "info:<text>" otherwise
+extern "C" void launcher_android_update_status(const char *text) {
+    pthread_mutex_lock(&g_pick_lock);
+    g_update_avail = !strncmp(text, "avail:", 6);
+    snprintf(g_update_text, sizeof g_update_text, "%s", strchr(text, ':') ? strchr(text, ':') + 1 : text);
+    pthread_mutex_unlock(&g_pick_lock);
 }
 static void pick_game_folder(SDL_Window *) { plat_android_pick_folder(); }
+
 #else
 static void pick_game_folder(SDL_Window *win) { SDL_ShowOpenFolderDialog(picked_game, NULL, win, NULL, false); }
 #endif
@@ -160,6 +178,56 @@ static bool take(char *slot, char *out, size_t n) {
 
 // ------------------------------------------------------------------ the game files section
 static const ImVec4 &k_green = UI_GREEN_TEXT, &k_red = UI_RED_TEXT;
+
+#ifdef __ANDROID__
+// The app's own settings on Android: its updates (built by CI, installed over this copy: the game files and the
+// built game code stay) and where the log and the saves go
+static void android_section(void) {
+    ui_heading(T("App", "App"));
+    char upd[300], umsg[300];
+    bool avail;
+    pthread_mutex_lock(&g_pick_lock);
+    snprintf(upd, sizeof upd, "%s", g_update_text);
+    snprintf(umsg, sizeof umsg, "%s", g_user_msg);
+    avail = g_update_avail;
+    pthread_mutex_unlock(&g_pick_lock);
+    ImGui::PushTextWrapPos(0);
+    if (upd[0]) {
+        if (avail) ImGui::TextColored(k_green, "%s", upd);
+        else ImGui::TextDisabled("%s", upd);
+    }
+    ImGui::PopTextWrapPos();
+    if (avail) {
+        if (ui_button(T("Install the update", "Instalar a atualização"))) plat_android_update(true);
+    } else if (ui_button(T("Check for updates", "Procurar atualizações"))) {
+        plat_android_update(false);
+    }
+    ImGui::Spacing();
+    char dmsg[300];
+    pthread_mutex_lock(&g_pick_lock);
+    snprintf(dmsg, sizeof dmsg, "%s", g_data_msg);
+    pthread_mutex_unlock(&g_pick_lock);
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(T("Game files and recompiled game code folder:", "Pasta dos arquivos do jogo e do código recompilado:"));
+    ImGui::TextDisabled("%s", rt_data_root());
+    if (!strcmp(dmsg, "restart"))
+        ImGui::TextColored(k_green, "%s", T("Close and open the app again: the files move to the new folder then.",
+                                            "Feche e abra o app de novo: os arquivos vão para a nova pasta nessa hora."));
+    else if (dmsg[0])
+        ImGui::TextColored(k_red, T("Can't use %s (not writable, or inside the current folder)",
+                                    "Não dá para usar %s (sem permissão de gravar, ou dentro da pasta atual)"), dmsg);
+    ImGui::PopTextWrapPos();
+    if (ui_button(T("Change...##data", "Trocar...##data"))) plat_android_pick_folder_kind(2);
+    ImGui::Spacing();
+    const char *dir = plat_android_user_dir();
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(T("Log and saves folder:", "Pasta do log e dos saves:"));
+    ImGui::TextDisabled("%s", dir ? dir : T("(the app's own folder)", "(a pasta do próprio app)"));
+    if (umsg[0]) ImGui::TextColored(k_red, T("Can't write to %s", "Não dá para gravar em %s"), umsg);
+    ImGui::PopTextWrapPos();
+    if (ui_button(T("Change...##user", "Trocar...##user"))) plat_android_pick_folder_kind(1);
+}
+#endif
 
 static void game_files_section(SDL_Window *win) {
     ui_heading(T("Game files", "Arquivos do jogo"));
@@ -624,6 +692,9 @@ extern "C" void launcher_lg_run(const char *root) {
             ui_page_begin("##page", ImVec2(0, 0));
             if (tab == TAB_GAME) {
                 game_files_section(win);
+#ifdef __ANDROID__
+                android_section();
+#endif
                 ui_heading(T("Options", "Opções"));
                 // A / B and X / Y by the layout's positions (runtime/hle/bindings.c bind_set_layout)
                 // (Let's Go's wild battles and controller-screen skip hook its code: not here)

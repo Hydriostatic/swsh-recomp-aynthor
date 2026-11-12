@@ -45,10 +45,19 @@ Controls: every controller is opened, and the one you press buttons on is the on
 built-in controls work even when Android lists other input devices first (the log names each one: `[input] gamepad`).
 Android's Back works as Esc: it opens and closes the in-game menu.
 
-Logs and saves: `Download/SwShRecomp/` on the Thor's storage (`lasrecomp.log`, `lasrecomp-prev.log`, `save-sword/`
-or `save-shield/`), where any file manager reaches them. Saves made in an earlier version, in the app's own folder,
-move there on the next start. If the app can't write to `Download`, both stay in
-`Android/data/io.github.hydriostatic.swshrecomp/files/`. Logcat tag: `SwShRecomp`.
+Folders (the start screen's **App** section; both in internal storage by default, and both kept when the app is
+reinstalled):
+- **Game files and recompiled game code**: `SwShRecomp/` (exefs, the RomFS image, `lasgame.so`, caches, settings).
+  A new folder is used from the next start, and the files move there then.
+- **Log and saves**: `Download/SwShRecomp/` (`lasrecomp.log`, `lasrecomp-prev.log`, `save-sword/`). The saves move
+  at once to a newly picked folder.
+
+Updates: **Check for updates** in the App section installs the newest build of the `thor` branch (the `thor-latest`
+release) over the app, keeping the game files and the recompiled code. The first time, Android asks to allow
+"Install unknown apps" for SwSh Recomp. Every build is signed with the same key (`android/signing/`, or the
+repository secrets `SIGNING_KEYSTORE_B64` and `SIGNING_PASSWORD`).
+
+A crash shows the last lines of the log in its message and on the bottom screen. Logcat tag: `SwShRecomp`.
 Settings that would be environment variables on PC go one per line (`NAME=value`) in `.../files/larecomp.env`, for
 example `LARECOMP_VK_PRESENT=fifo`.
 

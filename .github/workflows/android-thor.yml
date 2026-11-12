@@ -6,6 +6,9 @@ on:
     branches: [thor]
   workflow_dispatch:
 
+permissions:
+  contents: write  # (the "thor-latest" release the app updates itself from)
+
 jobs:
   apk:
     runs-on: ubuntu-24.04
@@ -57,7 +60,17 @@ jobs:
         env:
           DEPS_PREFIX: ${{ github.workspace }}/build/android-deps
           SDL_SRC: ${{ runner.temp }}/SDL
-        run: gradle --no-daemon assembleRelease
+          BUILD_NUMBER: ${{ github.run_number }}
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$SIGNING_KEYSTORE_B64" ]; then
+            echo "$SIGNING_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export SIGNING_KEYSTORE="$RUNNER_TEMP/release.jks"
+          else
+            unset SIGNING_PASSWORD
+          fi
+          gradle --no-daemon assembleRelease
       - name: Collect
         run: |
           mkdir -p out
@@ -69,3 +82,16 @@ jobs:
         with:
           name: swshrecomp-thor
           path: out/
+      - name: Publish for the in-app updater
+        if: github.ref == 'refs/heads/thor'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "${{ github.run_number }}" > out/build.txt
+          cp out/SwShRecomp-thor.apk "out/SwShRecomp-thor-${{ github.run_number }}.apk"
+          notes="Build ${{ github.run_number }} ($(git log -1 --format=%s))"
+          gh release view thor-latest > /dev/null 2>&1 || gh release create thor-latest --prerelease --title "Thor (latest)" --notes "$notes" --target "${{ github.sha }}"
+          gh release edit thor-latest --notes "$notes" --target "${{ github.sha }}"
+          git tag -f thor-latest "${{ github.sha }}" && git push -f origin thor-latest
+          for a in $(gh release view thor-latest --json assets -q '.assets[].name'); do gh release delete-asset thor-latest "$a" -y; done
+          gh release upload thor-latest "out/SwShRecomp-thor-${{ github.run_number }}.apk" out/build.txt

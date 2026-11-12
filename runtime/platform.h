@@ -88,7 +88,12 @@ int plat_android_surface_generation(void);     // counts the returns to the fore
 void plat_android_pick_folder(void);
 const char *plat_android_lib_dir(void);      // the APK's installed libraries (and the game code builder's programs)
 const char *plat_android_private_dir(void);  // the app's private folder
-const char *plat_android_user_dir(void);     // Download/SwShRecomp (the log, the saves), NULL if not writable
+const char *plat_android_user_dir(void);     // the log and saves folder (Download/SwShRecomp), NULL if not writable
+bool plat_android_set_user_dir(const char *dir);  // another one (the saves move along), false if not writable
+bool plat_android_set_data_dir(const char *dir);  // the game files folder, from the next start (its files move along)
+// The start screen's buttons: the folder picker for kind 0 (game) / 1 (log and saves), the update check / install
+void plat_android_pick_folder_kind(int kind);
+void plat_android_update(bool install);
 #endif
 
 // ---- diagnostics

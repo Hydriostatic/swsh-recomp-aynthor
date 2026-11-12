@@ -27,8 +27,10 @@
 #include <unistd.h>
 #include <unwind.h>
 
+#include "../panel.h"
 #include "../paths.h"
 #include "../platform.h"
+#include <dirent.h>
 
 #define TAG "SwShRecomp"
 #define ALOG(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -172,9 +174,19 @@ bool plat_android_stage_lib(const char *src, char *out, size_t n) {
 
 const char *plat_android_data_dir(void) { return g_data; }
 
-// ---- the player's folder: Download/SwShRecomp on shared storage, where any file manager on the device reaches it
-// (Android/data, the data root, is hidden from them on Android 11 and later): the log and the saves go there. NULL
-// when the app can't write there (then they stay in the data root).
+static void read_line_file(const char *name, char *out, size_t n) {  // a one-line file in the private folder
+    out[0] = 0;
+    char p[1000];
+    snprintf(p, sizeof p, "%s/%s", g_private, name);
+    FILE *f = fopen(p, "rb");
+    if (!f) return;
+    if (fgets(out, (int)n, f)) out[strcspn(out, "\r\n")] = 0;
+    fclose(f);
+}
+
+// ---- the player's folder for the log and the saves: Download/SwShRecomp on shared storage by default, where any file
+// manager on the device reaches it, or the folder picked on the start screen (<private>/user_dir.txt). NULL when the
+// app can't write there (then they stay in the data root).
 static char g_user[900];
 static bool writable_dir(const char *dir) {
     mkdirs(dir);
@@ -186,17 +198,69 @@ static bool writable_dir(const char *dir) {
     remove(t);
     return true;
 }
+static const char *storage_top(void) {
+    const char *top = getenv("EXTERNAL_STORAGE");
+    return top && *top ? top : "/storage/emulated/0";
+}
 const char *plat_android_user_dir(void) {
     static int checked;
     if (!checked) {
         checked = 1;
-        const char *top = getenv("EXTERNAL_STORAGE");
         char d[900];
-        snprintf(d, sizeof d, "%s/Download/SwShRecomp", top && *top ? top : "/storage/emulated/0");
+        read_line_file("user_dir.txt", d, sizeof d);
+        if (!d[0]) snprintf(d, sizeof d, "%s/Download/SwShRecomp", storage_top());
         if (writable_dir(d)) snprintf(g_user, sizeof g_user, "%s", d);
         else ALOG("%s is not writable: the log and saves stay in the app's folder", d);
     }
     return g_user[0] ? g_user : NULL;
+}
+
+static bool move_entry(const char *from, const char *to);  // (below)
+
+// The start screen's "Change..." for the game files and built game code: used from the next start, when what the
+// current folder has moves there. false: the folder can't be written.
+bool plat_android_set_data_dir(const char *dir) {
+    if (!writable_dir(dir)) return false;
+    size_t n = strlen(g_data);
+    if (!strcmp(dir, g_data)) return true;
+    if (!strncmp(dir, g_data, n) && dir[n] == '/') return false;  // (inside the current one: it would move into itself)
+    char p[1000];
+    snprintf(p, sizeof p, "%s/data_prev.txt", g_private);
+    FILE *f = fopen(p, "wb");
+    if (f) { fprintf(f, "%s\n", g_data); fclose(f); }
+    snprintf(p, sizeof p, "%s/data_dir.txt", g_private);
+    f = fopen(p, "wb");
+    if (f) { fprintf(f, "%s\n", dir); fclose(f); }
+    fprintf(stderr, "[android] game files folder: %s from the next start\n", dir);
+    return true;
+}
+
+// The start screen's "Change..." for the log and saves: moves the saves (and logs) there and uses it from now on.
+// false: the folder can't be written.
+bool plat_android_set_user_dir(const char *dir) {
+    if (!writable_dir(dir)) return false;
+    const char *old = plat_android_user_dir();
+    if (old && strcmp(old, dir)) {
+        DIR *d = opendir(old);
+        if (d) {
+            for (struct dirent *e; (e = readdir(d));) {
+                if (strncmp(e->d_name, "save", 4) && strncmp(e->d_name, "lasrecomp", 9)) continue;
+                char a[1100], b[1100];
+                snprintf(a, sizeof a, "%s/%s", old, e->d_name);
+                snprintf(b, sizeof b, "%s/%s", dir, e->d_name);
+                if (!strcmp(e->d_name, "lasrecomp.log")) continue;  // (open: this run's goes on there)
+                if (!move_entry(a, b)) fprintf(stderr, "[android] can't move %s to %s\n", a, b);
+            }
+            closedir(d);
+        }
+    }
+    char p[1000];
+    snprintf(p, sizeof p, "%s/user_dir.txt", g_private);
+    FILE *f = fopen(p, "wb");
+    if (f) { fprintf(f, "%s\n", dir); fclose(f); }
+    snprintf(g_user, sizeof g_user, "%s", dir);
+    fprintf(stderr, "[android] log and saves: %s (the log from the next start)\n", dir);
+    return true;
 }
 
 // ---- process
@@ -233,10 +297,40 @@ const char *plat_symbol(uint64_t pc, uint64_t *offset) {
     return di.dli_sname;
 }
 
+// The last lines of the log (the error itself), for the dialog and the bottom screen: the log file can be hard to
+// reach on the device
+static void log_tail_lines(char *out, size_t n, int lines) {
+    out[0] = 0;
+    if (!g_log_path[0]) return;
+    FILE *f = fopen(g_log_path, "rb");
+    if (!f) return;
+    char buf[4096];
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, size > (long)sizeof buf - 1 ? size - (long)sizeof buf + 1 : 0, SEEK_SET);
+    size_t k = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[k] = 0;
+    while (k && (buf[k - 1] == '\n' || buf[k - 1] == '\r')) buf[--k] = 0;
+    char *p = buf + k;
+    for (int i = 0; i < lines && p > buf; i++) {
+        p--;
+        while (p > buf && p[-1] != '\n') p--;
+    }
+    snprintf(out, n, "%s", p);
+}
+
 void plat_fatal_notice(void) {
     fflush(stderr);
-    char text[1200];
-    snprintf(text, sizeof text, RT_APP_NAME " stopped because of an error.\n\nDetails: %s", g_log_path[0] ? g_log_path : "logcat");
+    char tail[1200], text[1800];
+    log_tail_lines(tail, sizeof tail, 8);
+    char first[200];
+    snprintf(first, sizeof first, "%s", tail);
+    char *nl = strrchr(first, '\n');
+    panel_set("error", "stopped", "%s", nl ? nl + 1 : first);
+    panel_set("error", "log", "%s", g_log_path[0] ? g_log_path : "logcat");
+    snprintf(text, sizeof text, RT_APP_NAME " stopped because of an error.\n\n%s\n\nLog: %s", tail[0] ? tail : "(no details)",
+             g_log_path[0] ? g_log_path : "logcat");
     ALOG("%s", text);
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, RT_APP_NAME, text, NULL);
 }
@@ -389,6 +483,48 @@ static bool lifecycle_watch(void *user, SDL_Event *e) {
     return true;
 }
 
+// What an earlier version kept in the app's own folder moves to the data root, entry by entry, where the root doesn't
+// have it yet: a rename (the same storage), else a copy.
+static bool copy_tree(const char *from, const char *to) {
+    struct stat st;
+    if (lstat(from, &st) != 0) return false;
+    if (!S_ISDIR(st.st_mode)) return copy_file(from, to);
+    mkdir(to, 0755);
+    DIR *d = opendir(from);
+    if (!d) return false;
+    bool ok = true;
+    for (struct dirent *e; ok && (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        char a[1100], b[1100];
+        snprintf(a, sizeof a, "%s/%s", from, e->d_name);
+        snprintf(b, sizeof b, "%s/%s", to, e->d_name);
+        ok = copy_tree(a, b);
+    }
+    closedir(d);
+    return ok;
+}
+static bool move_entry(const char *from, const char *to) {
+    if (rename(from, to) == 0) return true;
+    if (!copy_tree(from, to)) return false;
+    plat_remove_tree(from);
+    return true;
+}
+static void migrate_data(const char *from, const char *to) {
+    DIR *d = opendir(from);
+    if (!d) return;
+    for (struct dirent *e; (e = readdir(d));) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || !strncmp(e->d_name, "lasrecomp", 9)) continue;
+        char a[1100], b[1100];
+        snprintf(a, sizeof a, "%s/%s", from, e->d_name);
+        snprintf(b, sizeof b, "%s/%s", to, e->d_name);
+        struct stat st;
+        if (stat(b, &st) == 0) continue;
+        ALOG("moving %s to %s", a, b);
+        if (!move_entry(a, b)) ALOG("can't move %s", a);
+    }
+    closedir(d);
+}
+
 int main(int argc, char **argv);  // runtime/main.c
 
 typedef struct { int argc; char **argv; int rc; } MainArgs;
@@ -405,7 +541,22 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
     const char *ext = SDL_GetAndroidExternalStoragePath(), *priv = SDL_GetAndroidInternalStoragePath();
     if (!priv) { ALOG("no storage path: %s", SDL_GetError()); return 1; }
     snprintf(g_private, sizeof g_private, "%s", priv);
-    snprintf(g_data, sizeof g_data, "%s", ext && *ext ? ext : priv);  // (no shared storage: everything private)
+    // The data root (game files, built game code, caches, settings): the folder picked on the start screen
+    // (<private>/data_dir.txt), else SwShRecomp/ in internal storage - both kept when the app is reinstalled (Android
+    // deletes Android/data/<package> with it). Needs all-files access (asked on the first start, MainActivity);
+    // without it the app's own folder, as before. What the previous folder had moves to a newly picked one here, at
+    // the start (data_prev.txt), and so does what older versions kept in the app's own folder.
+    char app_dir[900], top_dir[900], chosen[900], prev[900];
+    snprintf(app_dir, sizeof app_dir, "%s", ext && *ext ? ext : priv);
+    snprintf(top_dir, sizeof top_dir, "%s/SwShRecomp", storage_top());
+    read_line_file("data_dir.txt", chosen, sizeof chosen);
+    read_line_file("data_prev.txt", prev, sizeof prev);
+    if (chosen[0] && writable_dir(chosen)) snprintf(g_data, sizeof g_data, "%s", chosen);
+    else if (writable_dir(top_dir)) snprintf(g_data, sizeof g_data, "%s", top_dir);
+    else snprintf(g_data, sizeof g_data, "%s", app_dir);
+    if (prev[0] && strcmp(prev, g_data)) migrate_data(prev, g_data);
+    if (prev[0]) { char p2[1000]; snprintf(p2, sizeof p2, "%s/data_prev.txt", g_private); remove(p2); }
+    if (strcmp(app_dir, g_data)) migrate_data(app_dir, g_data);
     mkdirs(g_data);
     char p[1000];
     snprintf(p, sizeof p, "%s/res", g_private);
@@ -458,30 +609,46 @@ __attribute__((visibility("default"))) int SDL_main(int argc, char *argv[]) {
 
 #include "../panel.h"
 
-void launcher_android_folder_picked(const char *path);  // runtime/ui/launcher_lg.mm
+void launcher_android_folder_picked(int kind, const char *path);  // runtime/ui/launcher_lg.mm
+void launcher_android_update_status(const char *text);
 
-void plat_android_pick_folder(void) {
+// Calls a method of the activity (MainActivity) from any thread
+static void call_activity(const char *name, const char *sig, int iarg) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject act = (jobject)SDL_GetAndroidActivity();
-    if (!env || !act) { fprintf(stderr, "[android] no activity for the folder picker\n"); return; }
+    if (!env || !act) { fprintf(stderr, "[android] no activity for %s\n", name); return; }
     jclass cls = (*env)->GetObjectClass(env, act);
-    jmethodID m = cls ? (*env)->GetMethodID(env, cls, "pickGameFolder", "()V") : NULL;
-    if (m) (*env)->CallVoidMethod(env, act, m);
+    jmethodID m = cls ? (*env)->GetMethodID(env, cls, name, sig) : NULL;
+    if (m) (*env)->CallVoidMethod(env, act, m, iarg);
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     if (cls) (*env)->DeleteLocalRef(env, cls);
     (*env)->DeleteLocalRef(env, act);
 }
 
-// MainActivity: the picked folder's path, or NULL when the picker was closed
+void plat_android_pick_folder_kind(int kind) { call_activity("pickFolder", "(I)V", kind); }
+void plat_android_pick_folder(void) { plat_android_pick_folder_kind(0); }
+void plat_android_update(bool install) { call_activity("updateApp", "(Z)V", install ? 1 : 0); }
+
+// MainActivity: the picked folder's path
 __attribute__((visibility("default"))) JNIEXPORT void JNICALL
-Java_io_github_hydriostatic_swshrecomp_MainActivity_nativeFolderPicked(JNIEnv *env, jclass cls, jstring path) {
+Java_io_github_hydriostatic_swshrecomp_MainActivity_nativeFolderPicked(JNIEnv *env, jclass cls, jint kind, jstring path) {
     (void)cls;
     if (!path) return;
     const char *p = (*env)->GetStringUTFChars(env, path, NULL);
     if (!p) return;
-    fprintf(stderr, "[android] game folder: %s\n", p);
-    launcher_android_folder_picked(p);
+    fprintf(stderr, "[android] picked folder (%d): %s\n", (int)kind, p);
+    launcher_android_folder_picked((int)kind, p);
     (*env)->ReleaseStringUTFChars(env, path, p);
+}
+
+// MainActivity: what the updater is doing ("" = nothing to say)
+__attribute__((visibility("default"))) JNIEXPORT void JNICALL
+Java_io_github_hydriostatic_swshrecomp_MainActivity_nativeUpdateStatus(JNIEnv *env, jclass cls, jstring text) {
+    (void)cls;
+    const char *t = text ? (*env)->GetStringUTFChars(env, text, NULL) : NULL;
+    if (t && *t) fprintf(stderr, "[update] %s\n", t);
+    launcher_android_update_status(t ? t : "");
+    if (t) (*env)->ReleaseStringUTFChars(env, text, t);
 }
 
 __attribute__((visibility("default"))) JNIEXPORT jstring JNICALL
