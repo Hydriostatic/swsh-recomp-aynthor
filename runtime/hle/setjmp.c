@@ -211,10 +211,20 @@ static __attribute__((noinline)) void do_setjmp(Cpu *c) {
     bool found = false;
     if (caller && unw_getcontext(uc) == 0 && unw_init_local(cur, uc) == 0) {
         for (int depth = 0; depth < 32; depth++) {
-            if (unw_step(cur) <= 0) break;
+            // (0 = "end of stack" is also what libunwind answers when it has stepped INTO a frame without unwind
+            //  tables - game code linked without --eh-frame-hdr: the registers are that frame's already, and it may
+            //  well be the caller looked for. Only an error stops before looking.)
+            int r = unw_step(cur);
+            if (r < 0) break;
             unw_word_t ip = 0;
             unw_get_reg(cur, UNW_REG_IP, &ip);
             if (host_fn_containing((uintptr_t)ip) == caller) { found = true; break; }
+            if (r == 0) {
+                static int logged;
+                if (logged++ < 4) LOG("[setjmp] unwinding stopped at %llx (caller %llx)\n", (unsigned long long)ip,
+                                      (unsigned long long)caller);
+                break;
+            }
         }
     }
     if (!found) {
