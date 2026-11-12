@@ -56,7 +56,7 @@ cp -R "$R/tools/android/pylib/lz4" "$KIT/pylib/"
 
 # 3. the generator and what the game code is compiled against (the rebased copy: the app's own addresses)
 mkdir -p "$KIT/tools" "$KIT/gamelib-src"
-cp "$S"/tools/{gen,lifter,analyze,nso,passes,patches,simd_c}.py "$KIT/tools/"
+cp "$S"/tools/{gen,lifter,analyze,nso,passes,patches,simd_c}.py "$R/tools/android/genpar.py" "$KIT/tools/"
 cp "$S"/runtime/{cpu.h,simd.h,simd_fp.h,gamelib.h} "$S/tools/gamelib_entry.c" "$S/runtime/hle/hle_symbols.txt" "$KIT/gamelib-src/"
 
 # 4. zig: the aarch64-linux build runs on the device (a static binary); the x86_64 one here finds what it needs
@@ -92,6 +92,9 @@ rm -rf "$P/cache2" && mkdir -p "$P/cache2"
     $Z cc $GENFLAGS_ANDROID -I"$KIT/gamelib-src" -c "$P/probe.c" -o "$P/probe2.o")
 $Z ld.lld -shared -z max-page-size=16384 -o "$P/check.so" "$P/probe2.o" "$KIT/zig/rt/libcompiler_rt.a"
 echo "zig check: ok"
+# zig cc's -O1 is clang's -O2 (ReleaseFast): runtime/gamebuild.c adds -Xclang -O1 - the last -O must be that one
+lastO=$(cd "$S" && $Z cc $GENFLAGS_ANDROID -Xclang -O1 -I"$KIT/gamelib-src" -c "$P/probe.c" -o "$P/probe3.o" -v 2>&1 | grep -- '-cc1' | tr ' ' '\n' | grep -E '^"?-O[0-9sz]"?$' | tail -1)
+echo "zig cc: last optimization flag to clang: ${lastO:-?}"
 
 echo "$GAMELIB_ID_ANDROID $(date -u +%Y%m%d%H%M%S)" > "$KIT/VERSION"
 rm -f "$R/android/app/src/main/assets/genkit.zip"

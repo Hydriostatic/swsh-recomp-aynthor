@@ -53,6 +53,10 @@ jobs:
           key: genkit-${{ hashFiles('tools/android/build_genkit.sh') }}
       - name: Game code builder (python, capstone, unicorn, zig for the device)
         run: tools/android/build_genkit.sh build/genkit-work
+      - name: Parallel generator = gen.py (tools/android/test_genpar.py)
+        run: |
+          pip install -q capstone==5.0.6 unicorn==2.1.1 lz4
+          python3 tools/android/test_genpar.py build/genkit-work/capstone-b/libcapstone.so build/genpar-test 4
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: "8.11.1", validate-wrappers: false }
       - name: Build

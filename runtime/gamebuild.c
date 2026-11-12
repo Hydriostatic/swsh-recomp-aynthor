@@ -12,6 +12,7 @@
 #include "paths.h"
 #include "platform.h"
 #include "rt.h"
+#include <SDL3/SDL_cpuinfo.h>
 #ifdef __ANDROID__
 #include "romfs_build.h"
 #endif
@@ -134,7 +135,7 @@ static bool find_tools(Tools *t) {
         plat_sleep_until_ns(plat_now_ns() + 200000000ull);
     }
     snprintf(t->gen, sizeof t->gen, "%s/libpyexe.so", lib);
-    snprintf(t->gen_script, sizeof t->gen_script, "%s/res/tools/gen.py", priv);
+    snprintf(t->gen_script, sizeof t->gen_script, "%s/res/tools/genpar.py", priv);  // (gen.py on several cores)
     snprintf(t->cc, sizeof t->cc, "%s/libzig.so", lib);
     t->zig = true;
     snprintf(t->inc, sizeof t->inc, "%s/res/gamelib-src", priv);
@@ -283,6 +284,12 @@ static PlatProc start_compile(const Tools *t, const Unit *u) {
     Args a = {0};
     compiler(&a, t);
     add_cflags(&a, t);
+#ifdef __ANDROID__
+    // zig cc turns -O1 into ReleaseFast, which passes -O2 to clang: twice the compile time of the -O1 the game code
+    // is meant to be built with (upstream: 40 minutes with zig, 20 with clang). The last -O clang sees decides.
+    add(&a, "-Xclang");
+    add(&a, "-O1");
+#endif
     char inc[1200];
     snprintf(inc, sizeof inc, "-I%s", t->inc);
     add(&a, inc);
@@ -362,6 +369,15 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         add(&a, base[i]);
         add(&a, g->out);
         if (i == 1) { add(&a, "--hle"); add(&a, t.hle); }
+#ifdef __ANDROID__
+        {   // tools/android/genpar.py: main is most of the work (half the cores), sdk next, the two small ones alone
+            char jobs[16];
+            int cores = SDL_GetNumLogicalCPUCores();
+            snprintf(jobs, sizeof jobs, "%d", i == 0 ? (cores / 2 > 1 ? cores / 2 : 1) : i == 1 ? (cores / 4 > 1 ? cores / 4 : 1) : 1);
+            add(&a, "--jobs");
+            add(&a, jobs);
+        }
+#endif
         g->p = spawn(a.v, g->log);
         args_free(&a);
         if (!g->p) { snprintf(why, why_size, "the game code builder didn't start"); ok = false; }
