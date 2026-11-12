@@ -23,6 +23,10 @@
 #include "shader.h"
 
 uint64_t maxwell_gmem_base, maxwell_gmem_size;
+// The GPU has no 64-bit integers in shaders (shaderInt64: Adreno, Mali): the 64-bit sums, funnel shifts and global
+// memory addresses below are written with 32-bit halves instead - a shader using a 64-bit type fails to build there,
+// and its draws go missing. Set by the Vulkan backend from the device's features.
+bool maxwell_no_int64;
 const uint8_t *maxwell_dbg_code;
 uint32_t maxwell_dbg_pc;
 int maxwell_dbg_reg;
@@ -1187,20 +1191,36 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
     } else if (OPM(0x1c00000000000000ull, 0xfe00000000000000ull)) {  // IADD32I (CC bit 52, X bit 53)
         bool wcc = bits(w, 52, 1), x = bits(w, 53, 1);
         if (wcc || x) c->uses_cc = true;
+        if (c->glsl && maxwell_no_int64) {  // (32-bit halves: the carries added up)
+            sp(&c->body, "    { uint c1 = 0u, c2 = 0u; uint sum = uaddCarry(%s%s, 0x%08xu, c1);%s%s\n", bits(w, 56, 1) ? "-" : "",
+               R(a), (uint32_t)bits(w, 20, 32), x ? " sum = uaddCarry(sum, cc, c2);" : "", wcc ? " cc = (c1 + c2) & 1u;" : "");
+            if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = sum;\n", d); }
+            sp(&c->body, "    }\n");
+        } else {
         sp(&c->body, "    { ulong sum = ulong(%s%s) + ulong(0x%08xu)%s;%s\n", bits(w, 56, 1) ? "-" : "", R(a), (uint32_t)bits(w, 20, 32),
            x ? " + ulong(cc)" : "", wcc ? " cc = uint(sum >> 32) & 1u;" : "");
         if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = uint(sum);\n", d); }
         sp(&c->body, "    }\n");
+        }
     } else if (OPM(0x5cc0000000000000ull, 0xfff0000000000000ull) || OPM(0x4cc0000000000000ull, 0xfff0000000000000ull) ||
                OPM(0x38c0000000000000ull, 0xfef0000000000000ull)) {  // IADD3
         bool wcc3 = bits(w, 47, 1), x3 = bits(w, 48, 1);
         if (wcc3 || x3) {  // carry in/out (64-bit address math)
             c->uses_cc = true;
+            if (c->glsl && maxwell_no_int64) {  // (32-bit halves: the three sums' carries added up)
+                sp(&c->body, "    { uint c1 = 0u, c2 = 0u, c3 = 0u; uint sum = uaddCarry(%s%s, %s%s, c1); sum = uaddCarry(sum, %s%s, c2);%s\n",
+                   bits(w, 51, 1) ? "-" : "", R(a), bits(w, 50, 1) ? "-" : "", B(false), bits(w, 49, 1) ? "-" : "",
+                   R((int)bits(w, 39, 8)), x3 ? " sum = uaddCarry(sum, cc, c3);" : "");
+                if (wcc3) sp(&c->body, "      cc = (c1 + c2 + c3) & 1u;\n");
+                if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = sum;\n", d); }
+                sp(&c->body, "    }\n");
+            } else {
             sp(&c->body, "    { ulong sum = ulong(%s%s) + ulong(%s%s) + ulong(%s%s)%s;\n", bits(w, 51, 1) ? "-" : "", R(a),
                bits(w, 50, 1) ? "-" : "", B(false), bits(w, 49, 1) ? "-" : "", R((int)bits(w, 39, 8)), x3 ? " + ulong(cc)" : "");
             if (wcc3) sp(&c->body, "      cc = uint(sum >> 32) & 1u;\n");
             if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = uint(sum);\n", d); }
             sp(&c->body, "    }\n");
+            }
         } else {
             sprintf(t, "(%s%s + %s%s + %s%s)", bits(w, 51, 1) ? "-" : "", R(a), bits(w, 50, 1) ? "-" : "", B(false),
                     bits(w, 49, 1) ? "-" : "", R((int)bits(w, 39, 8)));
@@ -1462,6 +1482,17 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         const char *hi = R((int)bits(w, 39, 8));
         int width = bits(w, 38, 1) ? 64 : 32;
         bool s64 = bits(w, 37, 2) == 3, wrap = bits(w, 50, 1);
+        if (c->glsl && maxwell_no_int64) {  // (the 64-bit value as two halves: shf_* in the preamble)
+            sp(&c->body, wrap ? "    { uint s = %s & %du; uint vhi = %s, vlo = %s;\n" : "    { uint s = min(%s, %du); uint vhi = %s, vlo = %s;\n",
+               sh, wrap ? width - 1 : width, hi, R(a));
+            if (right && width == 64)
+                sprintf(t, "s >= 64u ? %s : %s(vhi, vlo, s)", s64 ? "uint(int(vhi) >> 31)" : "0u", s64 ? "shf_r_lo_s" : "shf_r_lo");
+            else if (right) sprintf(t, "shf_r_lo(vhi, vlo, s)");
+            else if (width == 64) sprintf(t, "s >= 64u ? 0u : shf_l_hi(vhi, vlo, s)");
+            else sprintf(t, "shf_l_hi(vhi, vlo, s)");
+            if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = %s;\n", d, t); }
+            sp(&c->body, "    }\n");
+        } else {
         sp(&c->body, wrap ? "    { uint s = %s & %du; ulong v = (ulong(%s) << 32) | ulong(%s);\n"
                           : "    { uint s = min(%s, %du); ulong v = (ulong(%s) << 32) | ulong(%s);\n",
            sh, wrap ? width - 1 : width, hi, R(a));
@@ -1472,6 +1503,7 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         else sprintf(t, "uint((v << s) >> 32)");
         if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      r%d = %s;\n", d, t); }
         sp(&c->body, "    }\n");
+        }
     } else if (OPM(0xeed0000000000000ull, 0xfff8000000000000ull) || OPM(0xeed8000000000000ull, 0xfff8000000000000ull)) {  // LDG / STG
         bool store = bits(w, 51, 1);
         bool wide = bits(w, 45, 1);
@@ -1479,20 +1511,42 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         int64_t off = sbits(w, 20, 24);
         c->info->uses_gmem = true;
         char addr[256];
+        bool g32 = c->glsl && maxwell_no_int64 && maxwell_gmem_size <= 0xFFFFFFFFull;
+        if (g32) {
+            // (32-bit halves: address hi:lo + the offset, minus the base, borrow and carry by hand; ga is the 32-bit
+            //  offset into the heap, which is under 4 GB, and ok compares both halves)
+            uint64_t o64 = (uint64_t)off, base = maxwell_gmem_base, size = maxwell_gmem_size;
+            if (a == RZ) {
+                uint64_t ga = o64 - base;
+                sp(&c->body, "    { uint ga = 0x%08xu; bool ok = %s;\n", (uint32_t)ga, ga < size ? "true" : "false");
+            } else {
+                sp(&c->body, "    { uint b0 = 0u, b1 = 0u; uint alo = uaddCarry(%s, 0x%08xu, b0); uint ahi = %s + 0x%08xu + b0;\n"
+                             "      uint ga = usubBorrow(alo, 0x%08xu, b1); uint ghi = ahi - 0x%08xu - b1; bool ok = ghi == 0u && ga < 0x%08xu;\n",
+                   R(a), (uint32_t)o64, wide ? R(a + 1) : "0u", (uint32_t)(o64 >> 32), (uint32_t)base, (uint32_t)(base >> 32),
+                   (uint32_t)size);
+            }
+        } else {
         if (a == RZ) sprintf(addr, "ulong(%lld)", (long long)off);
         else if (wide) sprintf(addr, "((ulong(%s) << 32 | ulong(%s)) + ulong(%lld))", R(a + 1), R(a), (long long)off);
         else sprintf(addr, "(ulong(%s) + ulong(%lld))", R(a), (long long)off);
         sp(&c->body, "    { ulong ga = %s - 0x%llxul; bool ok = ga < 0x%llxul;\n", addr,
            (unsigned long long)maxwell_gmem_base, (unsigned long long)maxwell_gmem_size);
+        }
         static const char *const ld_small[] = {"uint(gmem[ga])", "uint(int(char(gmem[ga])))",
                                                "uint(*(device ushort *)(gmem + ga))", "uint(int(*(device short *)(gmem + ga)))"};
         int nw = size == 5 ? 2 : size >= 6 ? 4 : 1;
         if (c->glsl) {  // gmem_.w[]: 32-bit words; sub-word accesses within the containing word
-            static const char *const gl_small[] = {
+            static const char *const gl_small64[] = {
                 "(gmem_.w[uint(ga >> 2)] >> (uint(ga & 3ul) * 8u)) & 0xFFu",
                 "uint(sx8(gmem_.w[uint(ga >> 2)] >> (uint(ga & 3ul) * 8u)))",
                 "(gmem_.w[uint(ga >> 2)] >> (uint(ga & 2ul) * 8u)) & 0xFFFFu",
                 "uint(sx16(gmem_.w[uint(ga >> 2)] >> (uint(ga & 2ul) * 8u)))"};
+            static const char *const gl_small32[] = {  // (ga a 32-bit uint: no 64-bit literals)
+                "(gmem_.w[ga >> 2] >> ((ga & 3u) * 8u)) & 0xFFu",
+                "uint(sx8(gmem_.w[ga >> 2] >> ((ga & 3u) * 8u)))",
+                "(gmem_.w[ga >> 2] >> ((ga & 2u) * 8u)) & 0xFFFFu",
+                "uint(sx16(gmem_.w[ga >> 2] >> ((ga & 2u) * 8u)))"};
+            const char *const *gl_small = g32 ? gl_small32 : gl_small64;
             if (!store) {
                 if (size < 4) {
                     if (d != RZ) { c->reg_used[d] = 1; sp(&c->body, "      if (ok) r%d = %s; else r%d = 0u;\n", d, gl_small[size], d); }
@@ -1508,7 +1562,8 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
                 c->info->gmem_stores = true;
                 if (size < 4)
                     sp(&c->body, "      if (ok) { uint wi = uint(ga >> 2); uint sh = uint(ga & %s) * 8u; atomicAnd(gmem_.w[wi], ~(0x%xu << sh)); "
-                       "atomicOr(gmem_.w[wi], (%s & 0x%xu) << sh); }\n", size < 2 ? "3ul" : "2ul", size < 2 ? 0xFFu : 0xFFFFu, R(d),
+                       "atomicOr(gmem_.w[wi], (%s & 0x%xu) << sh); }\n", size < 2 ? (g32 ? "3u" : "3ul") : (g32 ? "2u" : "2ul"),
+                       size < 2 ? 0xFFu : 0xFFFFu, R(d),
                        size < 2 ? 0xFFu : 0xFFFFu);
                 else
                     for (int k = 0; k < nw; k++)
@@ -1795,6 +1850,10 @@ static const char glsl_prelude[] =
     "uint popcount(uint v) { return uint(bitCount(v)); }\n"
     "uint mulhi(uint a, uint b) { uint hi, lo; umulExtended(a, b, hi, lo); return hi; }\n"
     "int mulhi(int a, int b) { int hi, lo; imulExtended(a, b, hi, lo); return hi; }\n"
+    // funnel shifts of hi:lo in 32-bit halves (SHF without 64-bit integers: maxwell_no_int64), s in 0..63
+    "uint shf_r_lo(uint hi, uint lo, uint s) { return s == 0u ? lo : s < 32u ? (lo >> s) | (hi << (32u - s)) : hi >> (s - 32u); }\n"
+    "uint shf_r_lo_s(uint hi, uint lo, uint s) { return s == 0u ? lo : s < 32u ? (lo >> s) | (hi << (32u - s)) : uint(int(hi) >> int(s - 32u)); }\n"
+    "uint shf_l_hi(uint hi, uint lo, uint s) { return s == 0u ? hi : s < 32u ? (hi << s) | (lo >> (32u - s)) : lo << (s - 32u); }\n"
     "uint bfe_u(uint v, uint ctl) { uint pos = ctl & 0xFFu, len = (ctl >> 8) & 0xFFu; if (len == 0u) return 0u; if (pos >= 32u) return 0u; return bitfieldExtract(v, int(pos), int(min(len, 32u - pos))); }\n"
     "uint bfe_s(uint v, uint ctl) { uint pos = ctl & 0xFFu, len = (ctl >> 8) & 0xFFu; if (len == 0u) return 0u; if (pos >= 32u) return (int(v) < 0) ? 0xFFFFFFFFu : 0u; return uint(bitfieldExtract(int(v), int(pos), int(min(len, 32u - pos)))); }\n"
     "uint bfi(uint ins, uint ctl, uint base) { uint pos = ctl & 0xFFu, len = (ctl >> 8) & 0xFFu; if (len == 0u || pos >= 32u) return base; return bitfieldInsert(base, ins, int(pos), int(min(len, 32u - pos))); }\n"

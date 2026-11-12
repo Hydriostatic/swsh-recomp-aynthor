@@ -313,9 +313,29 @@ static void create_image(NvnTexture *t, TexBackend *b) {
             b->astc_srgb = t->format >= 0x87;
             vf = b->astc_srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
         } else {
+            // depth / stencil formats a GPU may lack (mobile ones: stencil-only S8, D32+S8): the nearest one it has,
+            // the same aspects used through views - not RGBA8, which would leave a blank target
+            static const VkFormat ds_alts[][3] = {
+                {VK_FORMAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT},
+                {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_UNDEFINED},
+                {VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_UNDEFINED},
+                {VK_FORMAT_D16_UNORM, VK_FORMAT_D32_SFLOAT, VK_FORMAT_UNDEFINED},
+                {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_UNDEFINED}};
+            VkFormat alt = VK_FORMAT_UNDEFINED;
+            for (size_t i = 0; i < sizeof ds_alts / sizeof *ds_alts && !alt; i++)
+                if (ds_alts[i][0] == vf)
+                    for (int k = 1; k < 3 && !alt; k++)
+                        if (ds_alts[i][k] && format_supports(ds_alts[i][k], VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                                                                VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
+                            alt = ds_alts[i][k];
             static int nlog;
-            if (nlog++ < 20) LOG("[vk] format %d (nvn %#x) not supported: RGBA8 instead\n", vf, t->format);
-            vf = VK_FORMAT_R8G8B8A8_UNORM;
+            if (alt) {
+                if (nlog++ < 20) LOG("[vk] format %d (nvn %#x) not supported: depth/stencil format %d instead\n", vf, t->format, alt);
+                vf = alt;
+            } else {
+                if (nlog++ < 40) LOG("[vk] format %d (nvn %#x) not supported: RGBA8 instead (contents not uploaded)\n", vf, t->format);
+                vf = VK_FORMAT_R8G8B8A8_UNORM;
+            }
         }
     }
     bool depthfmt = renderer_format_is_depth(t->format);

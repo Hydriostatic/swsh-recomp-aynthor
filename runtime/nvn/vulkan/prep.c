@@ -342,7 +342,10 @@ static ShaderInfo *build_stage(const Stage *s, const ShaderKey *key, bool want_i
     size_t nw = 0;
     uint32_t *spv = vk_glsl_to_spirv(si->msl, s->stage, s->stage == STAGE_VERTEX ? "vs" : "fs", &nw);
     bool ok = false;
-    if (spv) {
+    if (spv && !g_vk.gpl) {  // no pipeline parts (mobile GPUs): the SPIR-V in the disk cache is the work done ahead -
+        ok = true;           // a draw then waits only for the driver's pipeline, not the translation and compile as well
+        free(spv);
+    } else if (spv) {
         VkBindingInfo binds[96];
         int nb = vk_reflect(spv, nw, binds, 96);
         int set = s->stage == STAGE_FRAGMENT;
@@ -485,7 +488,7 @@ static void *prep_main(void *a) {
     (void)a;
     plat_thread_idle();
     while (!g_vk.dev || !g_vk.pcache) SDL_DelayNS(50 * 1000000ull);
-    if (!g_vk.gpl) { LOG("[prep] off: needs the pipeline parts (LARECOMP_GPL=0, or not supported)\n"); return NULL; }
+    if (!g_vk.gpl) LOG("[prep] no pipeline parts on this GPU: shaders translated and compiled to SPIR-V ahead only\n");
     done_load();
     if (complete_check()) {
         LOG("[prep] already done for this build, GPU and driver\n");

@@ -279,6 +279,19 @@ static void create_device(void) {
     if (getenv("LARECOMP_NO_ROBUST")) b->robustBufferAccess = VK_FALSE;  // (research: what the bounds checks cost)
     b->shaderClipDistance = h->shaderClipDistance;
     if (!h->shaderInt64) LOG("[vk] warning: no shaderInt64 (64-bit address math in shaders)\n");
+    { extern bool maxwell_no_int64; maxwell_no_int64 = !h->shaderInt64; }  // (the translator writes 32-bit halves)
+    if (!h->shaderInt64) LOG("[vk] no shaderInt64: shaders get 32-bit math for 64-bit sums, shifts and addresses\n");
+    {   // what the translator's shuffles (SHFL, FSWZADD) need: shuffles in the vertex and fragment stages
+        VkPhysicalDeviceSubgroupProperties sg = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+        VkPhysicalDeviceProperties2 p2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &sg};
+        vkGetPhysicalDeviceProperties2(g_vk.phys, &p2);
+        LOG("[vk] subgroups: size %u, stages %#x, operations %#x%s\n", sg.subgroupSize, sg.supportedStages, sg.supportedOperations,
+            (sg.supportedStages & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)) !=
+                        (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT) ||
+                    !(sg.supportedOperations & VK_SUBGROUP_FEATURE_SHUFFLE_BIT)
+                ? " - warning: shuffles not in both graphics stages (shaders using them may not build)"
+                : "");
+    }
 #ifdef __ANDROID__
     // Mobile drivers (Adreno, Mali) lack some of what desktop ones all have, and vkCreateDevice fails outright when
     // asked for a missing feature: ask for what is there and name the rest in the log (what breaks without it is then
@@ -465,6 +478,11 @@ static void recreate_swapchain(void) {
 // game still, as it paces itself on presenting - and then makes the surface and the swapchain again.
 static int g_surface_gen;
 static void android_surface_check(void) {
+    if (plat_android_in_background()) {  // (Android may end a backgrounded app: the pipelines built so far are kept)
+        LOG("[vk] in the background: pipeline cache saved\n");
+        vk_pipeline_cache_save();
+        vk_parts_cache_save();
+    }
     while (plat_android_in_background()) SDL_Delay(50);
     int gen = plat_android_surface_generation();
     if (gen == g_surface_gen) return;  // (-1: the surface was lost, vk_frame_begin)

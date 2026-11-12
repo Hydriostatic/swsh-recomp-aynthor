@@ -23,6 +23,7 @@ cd ffmpeg
     --cxx=$TC/bin/aarch64-linux-android$API-clang++ --nm=$TC/bin/llvm-nm --ar=$TC/bin/llvm-ar --ranlib=$TC/bin/llvm-ranlib \
     --strip=$TC/bin/llvm-strip --enable-pic --disable-shared --enable-static --disable-programs --disable-doc --disable-everything \
     --enable-decoder=opus,vp9,vp8,h264,vorbis,aac --enable-demuxer=matroska,webm,mov,ogg --enable-parser=vp9,vp8,h264,opus,vorbis,aac \
+    --enable-bsf=vp9_superframe_split,vp9_superframe \
     --enable-protocol=file --enable-swscale --enable-swresample --disable-avdevice --disable-avfilter --disable-network
 make -j"$(nproc)" && make install
 echo "deps in $P"
