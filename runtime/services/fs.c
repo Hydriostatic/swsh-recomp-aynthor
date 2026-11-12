@@ -699,7 +699,22 @@ static Service *open_host_fs(const char *sub) {
                     : g_program_id == 0x0100ABF008968000ull ? "save-sword"
                     : g_program_id == 0x01008DB008C2C000ull ? "save-shield" : NULL;
     if (getenv("LARECOMP_SAVE_DIR") || strcmp(g_save_dir, "save")) own = NULL;
-    snprintf(fs->root, sizeof fs->root, "%s/%s", own ? own : g_save_dir, sub);
+    const char *dir = own ? own : g_save_dir;
+#ifdef __ANDROID__
+    // saves in Download/SwShRecomp (runtime/platform/android.c), where the player can reach and back them up; one
+    // made before this went there (in the hidden data root) moves along the first time
+    char user[1100];
+    if (!getenv("LARECOMP_SAVE_DIR") && plat_android_user_dir()) {
+        snprintf(user, sizeof user, "%s/%s", plat_android_user_dir(), dir);
+        struct stat st;
+        if (stat(user, &st) != 0 && stat(dir, &st) == 0) {
+            if (rename(dir, user) == 0) LOG("[fs] saves moved to %s\n", user);
+            else LOG("[fs] saves stay in %s (can't move them to %s)\n", dir, user);
+        }
+        if (stat(dir, &st) != 0) dir = user;  // (moved, or none there: the player's folder)
+    }
+#endif
+    snprintf(fs->root, sizeof fs->root, "%s/%s", dir, sub);
     char cmd[1200];
     snprintf(cmd, sizeof cmd, "%s", fs->root);
     for (char *q = cmd + 1; *q; q++)

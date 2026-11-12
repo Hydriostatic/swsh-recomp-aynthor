@@ -172,13 +172,42 @@ bool plat_android_stage_lib(const char *src, char *out, size_t n) {
 
 const char *plat_android_data_dir(void) { return g_data; }
 
+// ---- the player's folder: Download/SwShRecomp on shared storage, where any file manager on the device reaches it
+// (Android/data, the data root, is hidden from them on Android 11 and later): the log and the saves go there. NULL
+// when the app can't write there (then they stay in the data root).
+static char g_user[900];
+static bool writable_dir(const char *dir) {
+    mkdirs(dir);
+    char t[1000];
+    snprintf(t, sizeof t, "%s/.write_test", dir);
+    FILE *f = fopen(t, "wb");
+    if (!f) return false;
+    fclose(f);
+    remove(t);
+    return true;
+}
+const char *plat_android_user_dir(void) {
+    static int checked;
+    if (!checked) {
+        checked = 1;
+        const char *top = getenv("EXTERNAL_STORAGE");
+        char d[900];
+        snprintf(d, sizeof d, "%s/Download/SwShRecomp", top && *top ? top : "/storage/emulated/0");
+        if (writable_dir(d)) snprintf(g_user, sizeof g_user, "%s", d);
+        else ALOG("%s is not writable: the log and saves stay in the app's folder", d);
+    }
+    return g_user[0] ? g_user : NULL;
+}
+
 // ---- process
-// stderr / stdout go to lasrecomp.log in the data root (reachable over USB), the previous run's kept for crash
+// stderr / stdout go to lasrecomp.log in Download/SwShRecomp (or the data root) (reachable over USB), the previous run's kept for crash
 // reports as on the other platforms; the first lines also go to logcat (tag SwShRecomp).
 static void log_to_file(void) {
-    snprintf(g_log_path, sizeof g_log_path, "%s/lasrecomp.log", g_data);
+    const char *dir = plat_android_user_dir();
+    if (!dir) dir = g_data;
+    snprintf(g_log_path, sizeof g_log_path, "%s/lasrecomp.log", dir);
     char prev[1024];
-    snprintf(prev, sizeof prev, "%s/lasrecomp-prev.log", g_data);
+    snprintf(prev, sizeof prev, "%s/lasrecomp-prev.log", dir);
     rename(g_log_path, prev);
     if (!freopen(g_log_path, "w", stderr)) { ALOG("cannot open %s: %s", g_log_path, strerror(errno)); g_log_path[0] = 0; return; }
     dup2(STDERR_FILENO, STDOUT_FILENO);

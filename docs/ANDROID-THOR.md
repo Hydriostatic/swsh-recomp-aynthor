@@ -45,7 +45,10 @@ Controls: every controller is opened, and the one you press buttons on is the on
 built-in controls work even when Android lists other input devices first (the log names each one: `[input] gamepad`).
 Android's Back works as Esc: it opens and closes the in-game menu.
 
-Logs: `.../files/lasrecomp.log` (and `lasrecomp-prev.log`); logcat tag `SwShRecomp`.
+Logs and saves: `Download/SwShRecomp/` on the Thor's storage (`lasrecomp.log`, `lasrecomp-prev.log`, `save-sword/`
+or `save-shield/`), where any file manager reaches them. Saves made in an earlier version, in the app's own folder,
+move there on the next start. If the app can't write to `Download`, both stay in
+`Android/data/io.github.hydriostatic.swshrecomp/files/`. Logcat tag: `SwShRecomp`.
 Settings that would be environment variables on PC go one per line (`NAME=value`) in `.../files/larecomp.env`, for
 example `LARECOMP_VK_PRESENT=fifo`.
 
